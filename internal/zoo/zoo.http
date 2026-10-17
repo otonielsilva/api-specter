@@ -1,0 +1,120 @@
+# Manual requests for the bug zoo (VS Code REST Client: humao.rest-client).
+# Start the zoo with `go run ./cmd/zoo`, then click "Send Request" above a request.
+#
+# Create, find, list, put, patch and delete are implemented.
+# List ranges are half-open by index over animals sorted by ID: [start, end).
+
+@host = http://127.0.0.1:8080
+
+### Health check (expect 204)
+GET {{host}}/healthz
+
+### Create an animal
+POST {{host}}/animals
+Content-Type: application/json
+
+{
+  "name": "Leox",
+  "species": "lion",
+  "age": 5
+}
+
+### List all animals (expect 200)
+GET {{host}}/animals
+
+### List with start only: skip the first 2 (expect 200)
+GET {{host}}/animals?start=2
+
+### List with end only: first 2 (expect 200)
+GET {{host}}/animals?end=2
+
+### List a window: indexes 1 and 2 (expect 200)
+GET {{host}}/animals?start=1&end=3
+
+### List with end past the last animal (expect 200, clamped)
+GET {{host}}/animals?start=0&end=1000
+
+### List with start past the last animal (expect 200, [])
+GET {{host}}/animals?start=1000
+
+### List with negative start (expect 400)
+GET {{host}}/animals?start=-1
+
+### List with end before start (expect 400)
+GET {{host}}/animals?start=3&end=1
+
+### List with a non-numeric bound (expect 400)
+GET {{host}}/animals?start=abc
+
+### Find an animal by ID
+GET {{host}}/animals/1
+
+### Replace an animal: all fields required (expect 200)
+PUT {{host}}/animals/1
+Content-Type: application/json
+
+{
+  "name": "Leox",
+  "species": "lion",
+  "age": 7
+}
+
+### Replace with a missing field (expect 400)
+PUT {{host}}/animals/1
+Content-Type: application/json
+
+{
+  "name": "Leox"
+}
+
+### Replace an animal that does not exist (expect 404, PUT never creates)
+PUT {{host}}/animals/99999
+Content-Type: application/json
+
+{
+  "name": "Ghost",
+  "species": "lion",
+  "age": 3
+}
+
+### Patch an animal: only the fields sent change (expect 200)
+PATCH {{host}}/animals/1
+Content-Type: application/json
+
+{
+  "age": 6
+}
+
+### Patch with an empty object (expect 400)
+PATCH {{host}}/animals/1
+Content-Type: application/json
+
+{}
+
+### Patch with an invalid field (expect 400)
+PATCH {{host}}/animals/1
+Content-Type: application/json
+
+{
+  "age": -3
+}
+
+### Patch an animal that does not exist (expect 404)
+PATCH {{host}}/animals/99999
+Content-Type: application/json
+
+{
+  "name": "Ghost"
+}
+
+### Delete an animal (expect 204, then 404 if sent again)
+DELETE {{host}}/animals/1
+
+### Delete with a non-numeric ID (expect 400)
+DELETE {{host}}/animals/abc
+
+### Unknown route (expect 404)
+GET {{host}}/nope
+
+### Wrong method on a known route (expect 405)
+PUT {{host}}/healthz

@@ -1,0 +1,102 @@
+# Build and test output
+/bin/
+/dist/
+coverage.out
+coverage.html
+*.test
+*.out
+*.prof
+*.pprof
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.a
+*.o
+
+# Go tooling
+go.work
+go.work.sum
+/vendor/
+*.trace
+cpu.prof
+mem.prof
+
+# Local run data (corpus, results)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+/corpus/
+/results/
+/reports/
+
+# Logs and temp files
+*.log
+*.tmp
+*.temp
+*.bak
+*.orig
+*.rej
+/tmp/
+/scratch/
+
+# Secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+secrets.*
+credentials.*
+
+# Private notes and local tool settings
+/.notes/
+/.claude/
+/.serena/
+/.headroom/
+CLAUDE.md
+CLAUDE.local.md
+
+# Editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.#*
+\#*#
+*.sublime-project
+*.sublime-workspace
+.project
+.classpath
+.settings/
+.vim/
+.netrwhist
+.fleet/
+
+# OS files
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# Linters and caches
+.golangci-cache/
+.cache/
+.air.toml
+tmp/

@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 440 140" width="440" height="140" role="img" aria-label="specter">
+  <style>
+    .ink { fill: #1f2328; }
+    .bg { fill: #ffffff; }
+    .muted { fill: #59636e; }
+    .cyan { fill: #00a3c4; opacity: .75; }
+    .magenta { fill: #e5326f; opacity: .75; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
+    @media (prefers-color-scheme: dark) {
+      .ink { fill: #e6edf3; }
+      .bg { fill: #0d1117; }
+      .muted { fill: #9198a1; }
+      .cyan { fill: #22d3ee; }
+      .magenta { fill: #ff4d8d; }
+    }
+  </style>
+
+  <defs>
+    <path id="ghost" d="M40 120 V70 a30 30 0 0 1 60 0 V120 l-10 -8 l-10 8 l-10 -8 l-10 8 l-10 -8 l-10 8 z"/>
+  </defs>
+
+  <!-- glitch: chromatic offset copies behind the ghost -->
+  <use href="#ghost" class="cyan" transform="translate(-4 0)"/>
+  <use href="#ghost" class="magenta" transform="translate(4 0)"/>
+  <use href="#ghost" class="ink"/>
+
+  <!-- eyes: braces, like a JSON body -->
+  <text x="70" y="86" text-anchor="middle" class="bg mono" font-size="24" font-weight="700">{ }</text>
+
+  <!-- glitch slices -->
+  <rect x="30" y="96" width="22" height="3" class="cyan"/>
+  <rect x="86" y="104" width="22" height="3" class="magenta"/>
+
+  <!-- wordmark -->
+  <text x="128" y="86" class="cyan mono" font-size="52" font-weight="700">specter</text>
+  <text x="132" y="86" class="magenta mono" font-size="52" font-weight="700">specter</text>
+  <text x="130" y="86" class="ink mono" font-size="52" font-weight="700">specter</text>
+
+  <text x="132" y="114" class="muted mono" font-size="15">contract-driven HTTP API fuzzer</text>
+</svg>

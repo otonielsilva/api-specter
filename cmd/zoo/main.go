@@ -1,3 +1,5 @@
+// Command zoo serves the deliberately buggy benchmark API that specter is
+// measured against.
 package main
 
 import (
@@ -12,11 +14,11 @@ import (
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
-	defer stop()
+	err := run(ctx)
+	stop()
 
-	if err := run(ctx); err != nil {
+	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		stop()
 		os.Exit(1)
 	}
 }

@@ -2,6 +2,7 @@ package zoo
 
 import "errors"
 
+// Animal is a zoo animal as stored and returned by the API.
 type Animal struct {
 	ID      int    `json:"id"`
 	Name    string `json:"name"`
@@ -9,6 +10,7 @@ type Animal struct {
 	Age     int    `json:"age"`
 }
 
+// CreateAnimal is the POST and PUT body: every field is required.
 type CreateAnimal struct {
 	Name    string `json:"name"`
 	Species string `json:"species"`

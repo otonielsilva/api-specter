@@ -6,7 +6,8 @@ import (
 	"strconv"
 )
 
-func (api *ZooApiConf) CreateAnimal(w http.ResponseWriter, r *http.Request) {
+// CreateAnimal handles POST /animals.
+func (api *API) CreateAnimal(w http.ResponseWriter, r *http.Request) {
 	var req CreateAnimal
 	if err := decodeJSON(w, r, &req); err != nil {
 		api.rejectBody(w, r, "create animal", err)
@@ -32,7 +33,8 @@ func (api *ZooApiConf) CreateAnimal(w http.ResponseWriter, r *http.Request) {
 	api.writeResponse(w, http.StatusCreated, animal)
 }
 
-func (api *ZooApiConf) DeleteAnimal(w http.ResponseWriter, r *http.Request) {
+// DeleteAnimal handles DELETE /animals/{id}.
+func (api *API) DeleteAnimal(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(r.PathValue("id"))
 	if err != nil {
 		api.logger.WarnContext(r.Context(), "delete animal rejected", "reason", "non-integer id", "id", r.PathValue("id"))
@@ -54,7 +56,8 @@ func (api *ZooApiConf) DeleteAnimal(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (api *ZooApiConf) FindAnimal(w http.ResponseWriter, r *http.Request) {
+// FindAnimal handles GET /animals/{id}.
+func (api *API) FindAnimal(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(r.PathValue("id"))
 	if err != nil {
 		api.writeErrorResponse(w, http.StatusBadRequest, "ID must be integer")
@@ -72,7 +75,7 @@ func (api *ZooApiConf) FindAnimal(w http.ResponseWriter, r *http.Request) {
 
 // PutAnimal replaces the whole animal: name, species and age are all
 // required, exactly as in creation. It never creates; an unknown ID is 404.
-func (api *ZooApiConf) PutAnimal(w http.ResponseWriter, r *http.Request) {
+func (api *API) PutAnimal(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(r.PathValue("id"))
 	if err != nil {
 		api.logger.WarnContext(r.Context(), "put animal rejected", "reason", "non-integer id", "id", r.PathValue("id"))
@@ -107,7 +110,7 @@ func (api *ZooApiConf) PutAnimal(w http.ResponseWriter, r *http.Request) {
 
 // PatchAnimal updates only the fields present in the body. An empty object
 // is rejected, and so is any field that fails the same rules as creation.
-func (api *ZooApiConf) PatchAnimal(w http.ResponseWriter, r *http.Request) {
+func (api *API) PatchAnimal(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(r.PathValue("id"))
 	if err != nil {
 		api.logger.WarnContext(r.Context(), "patch animal rejected", "reason", "non-integer id", "id", r.PathValue("id"))
@@ -137,7 +140,7 @@ func (api *ZooApiConf) PatchAnimal(w http.ResponseWriter, r *http.Request) {
 			// BUG-002: integer wrap-around. PATCH stores age through an
 			// int8, so ages of 128 and above come back negative or wrong.
 			// PUT and POST keep the full value.
-			a.Age = int(int8(*req.Age))
+			a.Age = int(int8(*req.Age)) //nolint:gosec // BUG-002: the overflow is the planted bug
 		}
 	})
 	if !ok {
@@ -154,7 +157,7 @@ func (api *ZooApiConf) PatchAnimal(w http.ResponseWriter, r *http.Request) {
 // ListAnimals returns animals ordered by ID. The optional query parameters
 // start and end select the half-open index range [start, end); start
 // defaults to 0 and end to the last animal.
-func (api *ZooApiConf) ListAnimals(w http.ResponseWriter, r *http.Request) {
+func (api *API) ListAnimals(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 
 	start, err := intParam(q.Get("start"), 0)

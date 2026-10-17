@@ -17,7 +17,7 @@ import (
 
 func TestHealthz(t *testing.T) {
 	rec := httptest.NewRecorder()
-	handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+	handler().ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/healthz", nil))
 
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusNoContent)
@@ -46,14 +46,14 @@ func TestCreateAndDeleteAnimal(t *testing.T) {
 
 	create := httptest.NewRecorder()
 	body := strings.NewReader(`{"name":"Leox","species":"lion","age":5}`)
-	h.ServeHTTP(create, httptest.NewRequest(http.MethodPost, "/animals", body))
+	h.ServeHTTP(create, httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/animals", body))
 	if create.Code != http.StatusCreated {
 		t.Fatalf("create status = %d, want %d", create.Code, http.StatusCreated)
 	}
 
 	for _, want := range []int{http.StatusNoContent, http.StatusNotFound} {
 		rec := httptest.NewRecorder()
-		h.ServeHTTP(rec, httptest.NewRequest(http.MethodDelete, "/animals/1", nil))
+		h.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodDelete, "/animals/1", nil))
 		if rec.Code != want {
 			t.Fatalf("delete status = %d, want %d", rec.Code, want)
 		}
@@ -63,7 +63,7 @@ func TestCreateAndDeleteAnimal(t *testing.T) {
 // BUG-001: concurrent deletes of one animal can both return 204.
 // The race is timing-dependent, so retry with fresh animals until it shows.
 func TestBug001ConcurrentDeleteReturnsTwice204(t *testing.T) {
-	api := &ZooApiConf{logger: slog.New(slog.DiscardHandler), animals: newAnimalStore()}
+	api := &API{logger: slog.New(slog.DiscardHandler), animals: newAnimalStore()}
 	mux := http.NewServeMux()
 	mux.HandleFunc("DELETE /animals/{id}", api.DeleteAnimal)
 
@@ -79,7 +79,7 @@ func TestBug001ConcurrentDeleteReturnsTwice204(t *testing.T) {
 				defer wg.Done()
 				<-start
 				rec := httptest.NewRecorder()
-				mux.ServeHTTP(rec, httptest.NewRequest(http.MethodDelete, path, nil))
+				mux.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodDelete, path, nil))
 				if rec.Code == http.StatusNoContent {
 					ok204.Add(1)
 				}
@@ -99,7 +99,7 @@ func TestListAnimalsPagination(t *testing.T) {
 	h := handler()
 	for range 5 {
 		body := strings.NewReader(`{"name":"a","species":"lion","age":1}`)
-		h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/animals", body))
+		h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/animals", body))
 	}
 
 	tests := []struct {
@@ -122,7 +122,7 @@ func TestListAnimalsPagination(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			rec := httptest.NewRecorder()
-			h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/animals"+tt.query, nil))
+			h.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/animals"+tt.query, nil))
 			if rec.Code != tt.code {
 				t.Fatalf("status = %d, want %d", rec.Code, tt.code)
 			}
@@ -148,7 +148,7 @@ func TestListAnimalsPagination(t *testing.T) {
 func TestPatchAnimal(t *testing.T) {
 	h := handler()
 	body := strings.NewReader(`{"name":"Leox","species":"lion","age":5}`)
-	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/animals", body))
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/animals", body))
 
 	tests := []struct {
 		name string
@@ -170,7 +170,7 @@ func TestPatchAnimal(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			rec := httptest.NewRecorder()
-			h.ServeHTTP(rec, httptest.NewRequest(http.MethodPatch, tt.path, strings.NewReader(tt.body)))
+			h.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodPatch, tt.path, strings.NewReader(tt.body)))
 			if rec.Code != tt.code {
 				t.Fatalf("status = %d, want %d", rec.Code, tt.code)
 			}
@@ -189,7 +189,7 @@ func TestPatchAnimal(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/animals/1", nil))
+	h.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/animals/1", nil))
 	var stored Animal
 	if err := json.Unmarshal(rec.Body.Bytes(), &stored); err != nil {
 		t.Fatalf("decode GET: %v", err)
@@ -202,7 +202,7 @@ func TestPatchAnimal(t *testing.T) {
 func TestPutAnimal(t *testing.T) {
 	h := handler()
 	body := strings.NewReader(`{"name":"Leox","species":"lion","age":5}`)
-	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/animals", body))
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/animals", body))
 
 	tests := []struct {
 		name string
@@ -221,7 +221,7 @@ func TestPutAnimal(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			rec := httptest.NewRecorder()
-			h.ServeHTTP(rec, httptest.NewRequest(http.MethodPut, tt.path, strings.NewReader(tt.body)))
+			h.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodPut, tt.path, strings.NewReader(tt.body)))
 			if rec.Code != tt.code {
 				t.Fatalf("status = %d, want %d", rec.Code, tt.code)
 			}
@@ -229,7 +229,7 @@ func TestPutAnimal(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/animals/1", nil))
+	h.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/animals/1", nil))
 	var stored Animal
 	if err := json.Unmarshal(rec.Body.Bytes(), &stored); err != nil {
 		t.Fatalf("decode GET: %v", err)
@@ -239,7 +239,7 @@ func TestPutAnimal(t *testing.T) {
 	}
 
 	rec = httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/animals/99", nil))
+	h.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/animals/99", nil))
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("PUT created animal 99: GET status = %d, want %d", rec.Code, http.StatusNotFound)
 	}
@@ -251,7 +251,7 @@ func do(t *testing.T, h http.Handler, method, path, body string, out any) int {
 	t.Helper()
 
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(method, path, strings.NewReader(body)))
+	h.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), method, path, strings.NewReader(body)))
 	if out != nil {
 		if err := json.Unmarshal(rec.Body.Bytes(), out); err != nil {
 			t.Fatalf("%s %s: decode %q: %v", method, path, rec.Body.String(), err)

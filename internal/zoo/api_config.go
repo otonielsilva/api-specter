@@ -9,6 +9,7 @@ import (
 	"net/http"
 )
 
+// ErrorResponse is the JSON body of every error response.
 type ErrorResponse struct {
 	Error string `json:"error"`
 }
@@ -45,7 +46,7 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, dst any) error {
 
 // rejectBody logs a failed decodeJSON and writes the matching error
 // response: 413 for oversized bodies, 400 for everything else.
-func (api *ZooApiConf) rejectBody(w http.ResponseWriter, r *http.Request, op string, err error, attrs ...any) {
+func (api *API) rejectBody(w http.ResponseWriter, r *http.Request, op string, err error, attrs ...any) {
 	api.logger.WarnContext(r.Context(), op+" rejected",
 		append([]any{"reason", "invalid body", "error", err}, attrs...)...)
 
@@ -60,7 +61,7 @@ func (api *ZooApiConf) rejectBody(w http.ResponseWriter, r *http.Request, op str
 	}
 }
 
-func (api *ZooApiConf) writeResponse(w http.ResponseWriter, code int, data any) {
+func (api *API) writeResponse(w http.ResponseWriter, code int, data any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 
@@ -71,6 +72,6 @@ func (api *ZooApiConf) writeResponse(w http.ResponseWriter, code int, data any) 
 	}
 }
 
-func (api *ZooApiConf) writeErrorResponse(w http.ResponseWriter, code int, message string) {
+func (api *API) writeErrorResponse(w http.ResponseWriter, code int, message string) {
 	api.writeResponse(w, code, ErrorResponse{Error: message})
 }

@@ -10,7 +10,8 @@ import (
 	"time"
 )
 
-type ZooApiConf struct {
+// API holds the zoo's dependencies and implements its HTTP handlers.
+type API struct {
 	logger  *slog.Logger
 	animals *animalStore
 	Address string
@@ -44,7 +45,7 @@ func handler() http.Handler {
 	mux := http.NewServeMux()
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
-	apiCfg := &ZooApiConf{
+	apiCfg := &API{
 		logger:  logger,
 		animals: newAnimalStore(),
 	}

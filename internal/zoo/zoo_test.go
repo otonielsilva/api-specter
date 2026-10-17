@@ -3,6 +3,7 @@ package zoo
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -339,5 +340,130 @@ func TestBug005CreateTruncatesLongName(t *testing.T) {
 	}
 	if len(created.Name) != 64 {
 		t.Fatalf("name length = %d, want 64 (BUG-005 did not reproduce)", len(created.Name))
+	}
+}
+
+func TestCreateAndDeleteFeed(t *testing.T) {
+	h := handler()
+
+	create := httptest.NewRecorder()
+	body := strings.NewReader(`{"name": "Beef", "diet": "carnivore", "stock": 10 }`)
+	h.ServeHTTP(create, httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/feeds", body))
+	if create.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want %d", create.Code, http.StatusCreated)
+	}
+
+	var feed Feed
+	if err := json.NewDecoder(create.Body).Decode(&feed); err != nil {
+		t.Fatalf("decode create response: %v", err)
+	}
+	if feed.ID == 0 {
+		t.Fatal("No id was created")
+	}
+
+	// Access response fields
+	t.Logf("Created feed: %+v", feed.ID)
+	if feed.Name != "Beef" || feed.Diet != Carnivore || feed.Stock != 10 {
+		t.Fatalf("Some of the feed fields are not according to the input. %+v", feed)
+	}
+
+	for _, want := range []int{http.StatusNoContent, http.StatusNotFound} {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodDelete, fmt.Sprintf("/feeds/%d", feed.ID), nil))
+		if rec.Code != want {
+			t.Fatalf("delete status = %d, want %d", rec.Code, want)
+		}
+	}
+}
+
+func TestListFeedPaginated(t *testing.T) {
+	h := handler()
+
+	for range 5 {
+		body := strings.NewReader(`{"name": "Beef", "diet": "carnivore", "stock": 10 }`)
+		h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/feeds", body))
+	}
+
+	tests := []struct {
+		name    string
+		query   string
+		code    int
+		wantIDs []int
+	}{
+		{"all", "", http.StatusOK, []int{1, 2, 3, 4, 5}},
+		{"start only", "?start=3", http.StatusOK, []int{4, 5}},
+		{"end only", "?end=2", http.StatusOK, []int{1, 2}},
+		{"window", "?start=1&end=3", http.StatusOK, []int{2, 3}},
+		{"end past the last", "?start=4&end=100", http.StatusOK, []int{5}},
+		{"start past the last", "?start=50", http.StatusOK, []int{}},
+		{"empty window", "?start=2&end=2", http.StatusOK, []int{}},
+		{"negative start", "?start=-1", http.StatusBadRequest, nil},
+		{"end before start", "?start=3&end=1", http.StatusBadRequest, nil},
+		{"not a number", "?start=abc", http.StatusBadRequest, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/feeds"+tt.query, nil))
+			if rec.Code != tt.code {
+				t.Fatalf("status = %d, want %d", rec.Code, tt.code)
+			}
+			if tt.code != http.StatusOK {
+				return
+			}
+
+			var got []Feed
+			if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+				t.Fatalf("decode feed error: %v", err)
+			}
+			ids := make([]int, 0, len(got))
+			for _, a := range got {
+				ids = append(ids, a.ID)
+			}
+			if !slices.Equal(ids, tt.wantIDs) {
+				t.Fatalf("ids = %v, want %v", ids, tt.wantIDs)
+			}
+		})
+	}
+}
+
+func TestPutFeeds(t *testing.T) {
+	h := handler()
+	body := strings.NewReader(`{"name": "Beef", "diet": "carnivore", "stock": 10 }`)
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/feeds", body))
+
+	tests := []struct {
+		name string
+		path string
+		body string
+		code int
+	}{
+		{"full replacement", "/feeds/1", `{"name": "Lettuce", "diet": "herbivore", "stock": 12 }`, http.StatusOK},
+		{"missing species", "/feeds/1", `{"name":"Lettuce","stock":9}`, http.StatusBadRequest},
+		{"Negative stock", "/feeds/1", `{"name":"Beef","diet":"carnivore","stock":-1}`, http.StatusBadRequest},
+		{"unknown field", "/feeds/1", `{"name": "Lettuce", "diet": "herbivore", "stock": 12,"id":4}`, http.StatusBadRequest},
+		{"bad json", "/feeds/1", `{`, http.StatusBadRequest},
+		{"non-numeric id", "/feeds/abc", `{"name": "Beef", "diet": "carnivore", "stock": 10 }`, http.StatusBadRequest},
+		{"missing animal is not created", "/feeds/99", `{"name": "Beef", "diet": "carnivore", "stock": 10 }`, http.StatusNotFound},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodPut, tt.path, strings.NewReader(tt.body)))
+			if rec.Code != tt.code {
+				t.Fatalf("status = %d, want %d", rec.Code, tt.code)
+			}
+		})
+	}
+
+	// After full replacement new values should be returned
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/feeds/1", nil))
+	var stored Feed
+	if err := json.Unmarshal(rec.Body.Bytes(), &stored); err != nil {
+		t.Fatalf("decode GET: %v", err)
+	}
+	if want := (Feed{ID: 1, Name: "Lettuce", Diet: Herbivore, Stock: 12}); stored != want {
+		t.Fatalf("stored = %+v, want %+v", stored, want)
 	}
 }

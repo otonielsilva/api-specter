@@ -1,7 +1,8 @@
 # Manual requests for the bug zoo (VS Code REST Client: humao.rest-client).
 # Start the zoo with `go run ./cmd/zoo`, then click "Send Request" above a request.
 #
-# Create, find, list, put, patch and delete are implemented.
+# Animals: create, find, list, put, patch and delete are implemented.
+# Feeds: create, list, find, put, restock and delete; feedings: create and list.
 # List ranges are half-open by index over animals sorted by ID: [start, end).
 
 @host = http://127.0.0.1:8080
@@ -45,6 +46,12 @@ GET {{host}}/animals?start=3&end=1
 
 ### List with a non-numeric bound (expect 400)
 GET {{host}}/animals?start=abc
+
+### List lions aged 4 to 9 (filters apply before start/end)
+GET {{host}}/animals?species=lion&minAge=4&maxAge=9
+
+### List with maxAge below minAge (expect 400)
+GET {{host}}/animals?minAge=9&maxAge=2
 
 ### Find an animal by ID
 GET {{host}}/animals/1
@@ -112,6 +119,142 @@ DELETE {{host}}/animals/1
 
 ### Delete with a non-numeric ID (expect 400)
 DELETE {{host}}/animals/abc
+
+### ---- Feeds and feedings ----
+# Order matters: create an animal (id 1, species "lion") and feeds first.
+# Diets: lion/tiger/wolf carnivore; zebra/giraffe/elephant herbivore; bear/monkey omnivore.
+
+### Create a carnivore feed (expect 201)
+POST {{host}}/feeds
+Content-Type: application/json
+
+{
+  "name": "Beef",
+  "diet": "carnivore",
+  "stock": 10
+}
+
+### Create a herbivore feed (expect 201)
+POST {{host}}/feeds
+Content-Type: application/json
+
+{
+  "name": "Hay",
+  "diet": "herbivore",
+  "stock": 5
+}
+
+### Create a feed with an invalid diet (expect 400)
+POST {{host}}/feeds
+Content-Type: application/json
+
+{
+  "name": "Pizza",
+  "diet": "pizzavore",
+  "stock": 1
+}
+
+### List feeds
+GET {{host}}/feeds
+
+### List herbivore feeds that are in stock
+GET {{host}}/feeds?diet=herbivore&inStock=true
+
+### List with an invalid diet (expect 400)
+GET {{host}}/feeds?diet=pizzavore
+
+### Find a feed
+GET {{host}}/feeds/1
+
+### Replace a feed (expect 200; all fields required)
+PUT {{host}}/feeds/1
+Content-Type: application/json
+
+{
+  "name": "Lamb",
+  "diet": "carnivore",
+  "stock": 20
+}
+
+### Replace a feed that does not exist (expect 404)
+PUT {{host}}/feeds/99999
+Content-Type: application/json
+
+{
+  "name": "Ghost",
+  "diet": "herbivore",
+  "stock": 1
+}
+
+### Restock a feed (expect 200, stock grows)
+POST {{host}}/feeds/1/restock
+Content-Type: application/json
+
+{
+  "quantity": 5
+}
+
+### Restock with a zero quantity (expect 400)
+POST {{host}}/feeds/1/restock
+Content-Type: application/json
+
+{
+  "quantity": 0
+}
+
+### Feed animal 1 (lion) with beef (expect 201)
+POST {{host}}/animals/1/feedings
+Content-Type: application/json
+
+{
+  "feedId": 1,
+  "quantity": 3
+}
+
+### Feed a lion hay (expect 422, diet mismatch)
+POST {{host}}/animals/1/feedings
+Content-Type: application/json
+
+{
+  "feedId": 2,
+  "quantity": 1
+}
+
+### Feed more than the stock (expect 409)
+POST {{host}}/animals/1/feedings
+Content-Type: application/json
+
+{
+  "feedId": 1,
+  "quantity": 1000
+}
+
+### Feed an animal that does not exist (expect 404)
+POST {{host}}/animals/99999/feedings
+Content-Type: application/json
+
+{
+  "feedId": 1,
+  "quantity": 1
+}
+
+### Feed with a feed that does not exist (expect 404)
+POST {{host}}/animals/1/feedings
+Content-Type: application/json
+
+{
+  "feedId": 99999,
+  "quantity": 1
+}
+
+### List the feedings of animal 1
+GET {{host}}/animals/1/feedings
+
+### Delete a feed that has feedings (expect 409)
+DELETE {{host}}/feeds/1
+
+### Delete a feed that has no feedings (expect 204)
+DELETE {{host}}/feeds/2
 
 ### Unknown route (expect 404)
 GET {{host}}/nope

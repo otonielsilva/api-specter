@@ -2,6 +2,7 @@ package zoo
 
 import (
 	"context"
+	_ "embed"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -10,10 +11,16 @@ import (
 	"time"
 )
 
+// openAPISpec is the zoo's contract, served at GET /openapi.yaml.
+//
+//go:embed openapi.yaml
+var openAPISpec []byte
+
 // API holds the zoo's dependencies and implements its HTTP handlers.
 type API struct {
 	logger  *slog.Logger
 	animals *animalStore
+	feeds   *feedStore
 	Address string
 }
 
@@ -48,10 +55,15 @@ func handler() http.Handler {
 	apiCfg := &API{
 		logger:  logger,
 		animals: newAnimalStore(),
+		feeds:   newFeedStore(),
 	}
 
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
+	})
+	mux.HandleFunc("GET /openapi.yaml", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/yaml")
+		_, _ = w.Write(openAPISpec)
 	})
 	mux.HandleFunc("GET /animals", apiCfg.ListAnimals)
 	mux.HandleFunc("POST /animals", apiCfg.CreateAnimal)
@@ -59,6 +71,16 @@ func handler() http.Handler {
 	mux.HandleFunc("PUT /animals/{id}", apiCfg.PutAnimal)
 	mux.HandleFunc("PATCH /animals/{id}", apiCfg.PatchAnimal)
 	mux.HandleFunc("DELETE /animals/{id}", apiCfg.DeleteAnimal)
+
+	mux.HandleFunc("GET /feeds", apiCfg.ListFeeds)
+	mux.HandleFunc("POST /feeds", apiCfg.CreateFeed)
+	mux.HandleFunc("GET /feeds/{id}", apiCfg.FindFeed)
+	mux.HandleFunc("PUT /feeds/{id}", apiCfg.PutFeed)
+	mux.HandleFunc("POST /feeds/{id}/restock", apiCfg.RestockFeed)
+	mux.HandleFunc("DELETE /feeds/{id}", apiCfg.DeleteFeed)
+
+	mux.HandleFunc("GET /animals/{id}/feedings", apiCfg.ListFeedings)
+	mux.HandleFunc("POST /animals/{id}/feedings", apiCfg.CreateFeeding)
 
 	return mux
 }

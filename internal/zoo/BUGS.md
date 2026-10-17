@@ -21,3 +21,7 @@ in the code with its ID, and asserted by a test in this package.
    change it when the bug needs a new endpoint.
 
 IDs are never reused, even if a bug is removed.
+| BUG-006 | `GET /feeds` | `diet` repeated, with an invalid value after the first (e.g. `?diet=herbivore&diet=pizzavore`) | `200`; only the first value is validated, the invalid one matches nothing. A single invalid `diet` correctly returns `400` | Input validation / repeated query parameter | Spec-driven enum check on every value of an array parameter; response-status oracle |
+| BUG-007 | `POST /feeds/{id}/restock` | Restock so that stock exceeds 1,000,000 | `200`, stock is past the cap that `POST` and `PUT` enforce; sending that feed back with `PUT` returns `400` | Boundary / missing invariant | Round-trip oracle: response body fails the request schema |
+| BUG-008 | `POST /animals/{id}/feedings` | Concurrent feedings that together ask for more than the stock | More than one `201`; stock goes negative | State / race (check-then-act) | Concurrent replay; invariant stock >= 0 via `GET /feeds/{id}` |
+| BUG-009 | `DELETE /feeds/{id}` | Feed A used by an older feeding, then feed B used by a newer one; delete A | `204`, but should be `409`; the feeding of A now references a missing feed | Referential integrity (needs call ordering) | Sequence of feed, feed, feeding, feeding, delete; `GET /feeds/{feedId}` after listing feedings |

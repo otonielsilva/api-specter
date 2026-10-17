@@ -1,0 +1,449 @@
+openapi: 3.0.3
+info:
+  title: Zoo API
+  version: 1.0.0
+  description: |
+    A small API for managing zoo animals and the feeds they eat.
+
+    Typical workflow:
+    - Create an animal and a feed, then record a feeding for the animal.
+    - A feed that has feedings cannot be deleted (409).
+    - Only animals of a known species can be fed, see the feedings endpoint.
+servers:
+  - url: http://127.0.0.1:8080
+
+tags:
+  - name: health
+  - name: animals
+  - name: feeds
+  - name: feedings
+
+paths:
+  /healthz:
+    get:
+      tags: [health]
+      operationId: healthz
+      summary: Liveness check
+      responses:
+        "204":
+          description: The zoo is up.
+
+  /animals:
+    get:
+      tags: [animals]
+      operationId: listAnimals
+      summary: List animals
+      description: |
+        Animals ordered by id. Filters apply first, then `start` and `end`
+        select the half-open index range [start, end) of the filtered result.
+      parameters:
+        - $ref: "#/components/parameters/Start"
+        - $ref: "#/components/parameters/End"
+        - name: species
+          in: query
+          description: Exact species, ignoring case.
+          schema: { type: string, minLength: 1 }
+        - name: minAge
+          in: query
+          description: Inclusive lower bound on age.
+          schema: { type: integer, minimum: 0 }
+        - name: maxAge
+          in: query
+          description: Inclusive upper bound on age. Must not be below `minAge`.
+          schema: { type: integer, minimum: 0 }
+      responses:
+        "200":
+          description: The matching animals, possibly empty.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Animal" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+    post:
+      tags: [animals]
+      operationId: createAnimal
+      summary: Create an animal
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AnimalInput" }
+      responses:
+        "201":
+          description: The stored animal, exactly as sent plus its id.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Animal" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "413": { $ref: "#/components/responses/TooLarge" }
+
+  /animals/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [animals]
+      operationId: findAnimal
+      summary: Find an animal
+      responses:
+        "200":
+          description: The animal.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Animal" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [animals]
+      operationId: replaceAnimal
+      summary: Replace an animal
+      description: Every field is required. Never creates; an unknown id is 404.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AnimalInput" }
+      responses:
+        "200":
+          description: The stored animal.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Animal" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "413": { $ref: "#/components/responses/TooLarge" }
+    patch:
+      tags: [animals]
+      operationId: updateAnimal
+      summary: Partially update an animal
+      description: Only the fields present change. At least one is required.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AnimalPatch" }
+      responses:
+        "200":
+          description: The stored animal.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Animal" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "413": { $ref: "#/components/responses/TooLarge" }
+    delete:
+      tags: [animals]
+      operationId: deleteAnimal
+      summary: Delete an animal
+      description: Succeeds once; deleting it again is 404.
+      responses:
+        "204":
+          description: Deleted.
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /animals/{id}/feedings:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [feedings]
+      operationId: listFeedings
+      summary: List an animal's feedings
+      description: In creation order.
+      responses:
+        "200":
+          description: The feedings, possibly empty.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Feeding" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    post:
+      tags: [feedings]
+      operationId: createFeeding
+      summary: Feed an animal
+      description: |
+        Takes `quantity` from the feed's stock and records the feeding.
+        Checks run in this order: 400 (bad id or body), 404 (animal, then
+        feed), 422, 409.
+
+        The animal's diet comes from its species:
+        - carnivore: lion, tiger, wolf
+        - herbivore: zebra, giraffe, elephant
+        - omnivore: bear, monkey
+
+        Omnivores eat any feed; the others need a feed of the same diet.
+        Species are matched ignoring case and surrounding spaces. An animal
+        of any other species cannot be fed (422).
+
+        The stock never goes below zero, and a rejected feeding changes
+        nothing.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/FeedingInput" }
+      responses:
+        "201":
+          description: The recorded feeding.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Feeding" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: The feed does not have enough stock.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "413": { $ref: "#/components/responses/TooLarge" }
+        "422":
+          description: The animal's species has no known diet, or the feed's diet does not suit it.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /feeds:
+    get:
+      tags: [feeds]
+      operationId: listFeeds
+      summary: List feeds
+      description: |
+        Feeds ordered by id. Filters apply first, then `start` and `end`
+        select the half-open index range [start, end) of the filtered result.
+      parameters:
+        - $ref: "#/components/parameters/Start"
+        - $ref: "#/components/parameters/End"
+        - name: diet
+          in: query
+          description: |
+            Keep feeds of any listed diet. May be repeated
+            (`?diet=herbivore&diet=omnivore`); every value must be valid.
+          style: form
+          explode: true
+          schema:
+            type: array
+            items: { $ref: "#/components/schemas/Diet" }
+        - name: inStock
+          in: query
+          description: "`true` keeps feeds with stock above 0, `false` keeps feeds with none."
+          schema: { type: boolean }
+      responses:
+        "200":
+          description: The matching feeds, possibly empty.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Feed" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+    post:
+      tags: [feeds]
+      operationId: createFeed
+      summary: Create a feed
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/FeedInput" }
+      responses:
+        "201":
+          description: The stored feed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Feed" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "413": { $ref: "#/components/responses/TooLarge" }
+
+  /feeds/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [feeds]
+      operationId: findFeed
+      summary: Find a feed
+      responses:
+        "200":
+          description: The feed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Feed" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [feeds]
+      operationId: replaceFeed
+      summary: Replace a feed
+      description: |
+        Every field is required. Never creates; an unknown id is 404. Past
+        feedings are kept as they are.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/FeedInput" }
+      responses:
+        "200":
+          description: The stored feed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Feed" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "413": { $ref: "#/components/responses/TooLarge" }
+    delete:
+      tags: [feeds]
+      operationId: deleteFeed
+      summary: Delete a feed
+      description: A feed used in any feeding cannot be deleted.
+      responses:
+        "204":
+          description: Deleted.
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: The feed is referenced by at least one feeding.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /feeds/{id}/restock:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      tags: [feeds]
+      operationId: restockFeed
+      summary: Add to a feed's stock
+      description: The stock stays within 0 to 1,000,000, like every other write.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Restock" }
+      responses:
+        "200":
+          description: The feed with its new stock.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Feed" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "413": { $ref: "#/components/responses/TooLarge" }
+
+components:
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema: { type: integer }
+    Start:
+      name: start
+      in: query
+      description: Index of the first item to return. Defaults to 0.
+      schema: { type: integer, minimum: 0, default: 0 }
+    End:
+      name: end
+      in: query
+      description: Index after the last item to return. Must not be below `start`. Defaults to the end of the list.
+      schema: { type: integer, minimum: 0 }
+
+  responses:
+    BadRequest:
+      description: A malformed id, query parameter or body, or a field that fails validation.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: No such resource.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    TooLarge:
+      description: The request body is over 1 MiB.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+
+    Diet:
+      type: string
+      enum: [herbivore, carnivore, omnivore]
+
+    Animal:
+      type: object
+      required: [id, name, species, age]
+      properties:
+        id: { type: integer, minimum: 1 }
+        name: { type: string, minLength: 1 }
+        species: { type: string, minLength: 1 }
+        age: { type: integer, minimum: 1 }
+
+    AnimalInput:
+      type: object
+      additionalProperties: false
+      required: [name, species, age]
+      properties:
+        name: { type: string, minLength: 1 }
+        species: { type: string, minLength: 1 }
+        age: { type: integer, minimum: 1 }
+
+    AnimalPatch:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        name: { type: string, minLength: 1 }
+        species: { type: string, minLength: 1 }
+        age: { type: integer, minimum: 1 }
+
+    Feed:
+      type: object
+      required: [id, name, diet, stock]
+      properties:
+        id: { type: integer, minimum: 1 }
+        name: { type: string, minLength: 1 }
+        diet: { $ref: "#/components/schemas/Diet" }
+        stock: { type: integer, minimum: 0, maximum: 1000000 }
+
+    FeedInput:
+      type: object
+      additionalProperties: false
+      required: [name, diet, stock]
+      properties:
+        name: { type: string, minLength: 1 }
+        diet: { $ref: "#/components/schemas/Diet" }
+        stock: { type: integer, minimum: 0, maximum: 1000000 }
+
+    Restock:
+      type: object
+      additionalProperties: false
+      required: [quantity]
+      properties:
+        quantity: { type: integer, minimum: 1, maximum: 1000000 }
+
+    Feeding:
+      type: object
+      required: [id, animalId, feedId, quantity, fedAt]
+      properties:
+        id: { type: integer, minimum: 1 }
+        animalId: { type: integer, minimum: 1 }
+        feedId: { type: integer, minimum: 1 }
+        quantity: { type: integer, minimum: 1, maximum: 1000000 }
+        fedAt: { type: string, format: date-time }
+
+    FeedingInput:
+      type: object
+      additionalProperties: false
+      required: [feedId, quantity]
+      properties:
+        feedId: { type: integer, minimum: 1 }
+        quantity: { type: integer, minimum: 1, maximum: 1000000 }

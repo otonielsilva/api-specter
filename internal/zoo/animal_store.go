@@ -56,10 +56,10 @@ func (s *animalStore) delete(id int) bool {
 	return ok
 }
 
-// list returns the animals ordered by ID, restricted to the half-open index
-// range [start, end). Both bounds are clamped to the number of stored
-// animals, so the result is never nil.
-func (s *animalStore) list(start, end int) []Animal {
+// list returns the animals matching f ordered by ID, restricted to the
+// half-open index range [start, end) of the filtered result. Both bounds are
+// clamped to the number of matches, so the result is never nil.
+func (s *animalStore) list(f animalFilter, start, end int) []Animal {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -72,6 +72,14 @@ func (s *animalStore) list(start, end int) []Animal {
 		s.sortedValid = true
 	}
 	all := s.sorted
+	if !f.empty() {
+		all = make([]Animal, 0, len(s.sorted))
+		for _, a := range s.sorted {
+			if f.matches(a) {
+				all = append(all, a)
+			}
+		}
+	}
 
 	// BUG-003: off-by-one. When the caller passes an explicit end equal to
 	// the number of animals and a non-zero start, the last animal is

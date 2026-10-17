@@ -156,23 +156,40 @@ func (api *API) PatchAnimal(w http.ResponseWriter, r *http.Request) {
 
 // ListAnimals returns animals ordered by ID. The optional query parameters
 // start and end select the half-open index range [start, end); start
-// defaults to 0 and end to the last animal.
+// defaults to 0 and end to the last animal. The optional filters species
+// (case-insensitive), minAge and maxAge apply before the range.
 func (api *API) ListAnimals(w http.ResponseWriter, r *http.Request) {
+	start, end, ok := api.rangeParams(w, r)
+	if !ok {
+		return
+	}
+	filter, err := animalFilterFrom(r.URL.Query())
+	if err != nil {
+		api.badQuery(w, err)
+		return
+	}
+
+	api.writeResponse(w, http.StatusOK, api.animals.list(filter, start, end))
+}
+
+// rangeParams parses the optional start and end query parameters shared by
+// the list endpoints. On bad input it writes the 400 itself and reports false.
+func (api *API) rangeParams(w http.ResponseWriter, r *http.Request) (start, end int, ok bool) {
 	q := r.URL.Query()
 
 	start, err := intParam(q.Get("start"), 0)
 	if err != nil || start < 0 {
 		api.writeErrorResponse(w, http.StatusBadRequest, "start must be a non-negative integer")
-		return
+		return 0, 0, false
 	}
 
-	end, err := intParam(q.Get("end"), math.MaxInt)
+	end, err = intParam(q.Get("end"), math.MaxInt)
 	if err != nil || end < start {
 		api.writeErrorResponse(w, http.StatusBadRequest, "end must be an integer >= start")
-		return
+		return 0, 0, false
 	}
 
-	api.writeResponse(w, http.StatusOK, api.animals.list(start, end))
+	return start, end, true
 }
 
 // intParam parses a query value, returning def when it is absent.

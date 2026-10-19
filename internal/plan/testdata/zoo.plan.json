@@ -1,0 +1,116 @@
+{
+  "version": 1,
+  "generator": "heuristic/0.1",
+  "spec": {
+    "path": "../../zoo/openapi.yaml",
+    "hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "order": [
+    "GET /animals",
+    "GET /feeds",
+    "GET /healthz",
+    "POST /animals",
+    "GET /animals/{id}",
+    "GET /animals/{id}/feedings",
+    "PATCH /animals/{id}",
+    "POST /feeds",
+    "GET /feeds/{id}",
+    "POST /animals/{id}/feedings",
+    "POST /feeds/{id}/restock",
+    "PUT /animals/{id}",
+    "PUT /feeds/{id}",
+    "DELETE /animals/{id}",
+    "DELETE /feeds/{id}"
+  ],
+  "operations": {
+    "DELETE /animals/{id}": {
+      "enabled": true,
+      "tags": ["animals", "destructive"],
+      "requires": [
+        { "param": "id", "in": "path",
+          "producers": [{ "op": "POST /animals", "from": "response.body.id" }] }
+      ]
+    },
+    "DELETE /feeds/{id}": {
+      "enabled": true,
+      "tags": ["feeds", "destructive"],
+      "requires": [
+        { "param": "id", "in": "path",
+          "producers": [{ "op": "POST /feeds", "from": "response.body.id" }] }
+      ]
+    },
+    "GET /animals": { "enabled": true, "tags": ["animals"], "requires": [] },
+    "GET /animals/{id}": {
+      "enabled": true,
+      "tags": ["animals"],
+      "requires": [
+        { "param": "id", "in": "path",
+          "producers": [{ "op": "POST /animals", "from": "response.body.id" }] }
+      ]
+    },
+    "GET /animals/{id}/feedings": {
+      "enabled": true,
+      "tags": ["feedings"],
+      "requires": [
+        { "param": "id", "in": "path",
+          "producers": [{ "op": "POST /animals", "from": "response.body.id" }] }
+      ]
+    },
+    "GET /feeds": { "enabled": true, "tags": ["feeds"], "requires": [] },
+    "GET /feeds/{id}": {
+      "enabled": true,
+      "tags": ["feeds"],
+      "requires": [
+        { "param": "id", "in": "path",
+          "producers": [{ "op": "POST /feeds", "from": "response.body.id" }] }
+      ]
+    },
+    "GET /healthz": { "enabled": true, "tags": ["health"], "requires": [] },
+    "PATCH /animals/{id}": {
+      "enabled": true,
+      "tags": ["animals"],
+      "requires": [
+        { "param": "id", "in": "path",
+          "producers": [{ "op": "POST /animals", "from": "response.body.id" }] }
+      ]
+    },
+    "POST /animals": { "enabled": true, "tags": ["animals"], "requires": [] },
+    "POST /animals/{id}/feedings": {
+      "enabled": true,
+      "tags": ["feedings"],
+      "requires": [
+        { "param": "id", "in": "path",
+          "producers": [{ "op": "POST /animals", "from": "response.body.id" }] },
+        { "param": "feedId", "in": "body",
+          "producers": [{ "op": "POST /feeds", "from": "response.body.id" }] }
+      ]
+    },
+    "POST /feeds": { "enabled": true, "tags": ["feeds"], "requires": [] },
+    "POST /feeds/{id}/restock": {
+      "enabled": true,
+      "tags": ["feeds"],
+      "requires": [
+        { "param": "id", "in": "path",
+          "producers": [{ "op": "POST /feeds", "from": "response.body.id" }] }
+      ]
+    },
+    "PUT /animals/{id}": {
+      "enabled": true,
+      "tags": ["animals"],
+      "requires": [
+        { "param": "id", "in": "path",
+          "producers": [{ "op": "POST /animals", "from": "response.body.id" }] }
+      ]
+    },
+    "PUT /feeds/{id}": {
+      "enabled": true,
+      "tags": ["feeds"],
+      "requires": [
+        { "param": "id", "in": "path",
+          "producers": [{ "op": "POST /feeds", "from": "response.body.id" }] }
+      ]
+    }
+  },
+  "seeds_needed": [],
+  "cycles": []
+}

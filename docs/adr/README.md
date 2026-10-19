@@ -12,3 +12,4 @@ write a new ADR that supersedes it and update the old one's status.
 | [0002](0002-modular-monolith-and-package-layout.md) | Modular monolith and package layout | Accepted |
 | [0003](0003-standard-library-first.md) | Standard library first | Accepted |
 | [0004](0004-bug-zoo-as-ground-truth.md) | Bug zoo as ground truth | Accepted |
+| [0005](0005-plan-and-run-split.md) | Plan and run split | Accepted |

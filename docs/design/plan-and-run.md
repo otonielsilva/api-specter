@@ -102,6 +102,19 @@ Top level:
   through.
 - `cycles`: cycles found and what the tool did to break them.
 
+Items of `seeds_needed` name the requirement that has no producer:
+
+```json
+{ "op": "GET /x/{id}", "param": "id", "in": "path" }
+```
+
+Items of `cycles` list the operations in the cycle and the edge that was
+dropped to break it:
+
+```json
+{ "ops": ["A", "B"], "dropped": { "from": "B", "to": "A", "param": "id" } }
+```
+
 Per operation (key = id, always `"METHOD /path"`, never the
 `operationId`):
 - `enabled`: whether it may be tested.

@@ -32,6 +32,7 @@ parser and a SQLite driver.
 | Dependency | Replaces | Why |
 |---|---|---|
 | `github.com/joho/godotenv` | A hand-written `.env` parser | Handles quoting, escapes, comments and `export` prefixes, which a short parser gets subtly wrong. Used only in `internal/config`. |
+| `github.com/getkin/kin-openapi` | A hand-written OpenAPI loader | Reads JSON and YAML, resolves `$ref` across the document and models schemas, parameters and responses. Writing that ourselves is a project of its own and not what specter is about. Used only in `internal/contract` (ADR 0005); the rest of specter sees specter's own model. |
 
 ## Alternatives considered
 

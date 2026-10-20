@@ -28,29 +28,15 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	case "help", "-h", "--help":
 		usage(stdout)
 		return nil
-	case "run":
-		run(stdout)
-		return nil
 	case "plan":
-		plan(stdout)
-		return nil
+		return planCmd(ctx, args[1:], stdout, stderr)
+	case "run":
+		return runCmd(ctx, args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "specter: unknown command %q\n\n", args[0])
 		usage(stderr)
 		return ErrUsage
 	}
-}
-
-func run(w io.Writer) {
-	fmt.Fprintln(w, "specter run: not implemented yet")
-	fmt.Fprintln(w, "It will read a plan file and send the requests to a target API,")
-	fmt.Fprintln(w, "using concurrent workers, then report the failures it finds.")
-}
-
-func plan(w io.Writer) {
-	fmt.Fprintln(w, "specter plan: not implemented yet")
-	fmt.Fprintln(w, "It will read an OpenAPI spec and write a fuzz plan: the operations,")
-	fmt.Fprintln(w, "their dependency graph, seed inputs and strategies. It sends no requests.")
 }
 
 func usage(w io.Writer) {

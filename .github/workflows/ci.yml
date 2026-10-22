@@ -28,7 +28,7 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
-      - uses: golangci/golangci-lint-action@v8
+      - uses: golangci/golangci-lint-action@v9
         with:
           # golangci-lint must be built with a Go version >= the one in
           # go.mod, so track the latest release instead of pinning.

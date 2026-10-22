@@ -4,6 +4,8 @@
 
 <p align="center">
   <a href="https://github.com/otonielsilva/api-specter/actions/workflows/ci.yml"><img src="https://github.com/otonielsilva/api-specter/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/otonielsilva/api-specter/actions/workflows/security.yml"><img src="https://github.com/otonielsilva/api-specter/actions/workflows/security.yml/badge.svg" alt="Security"></a>
+  <a href="https://goreportcard.com/report/github.com/otonielsilva/api-specter"><img src="https://goreportcard.com/badge/github.com/otonielsilva/api-specter" alt="Go Report Card"></a>
   <a href="go.mod"><img src="https://img.shields.io/github/go-mod/go-version/otonielsilva/api-specter" alt="Go version"></a>
 </p>
 

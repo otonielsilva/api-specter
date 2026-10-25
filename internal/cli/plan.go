@@ -37,7 +37,7 @@ func planCmd(ctx context.Context, args []string, stdout, stderr io.Writer) error
 		return fmt.Errorf("plan: load spec  -> %s: %w", *spec, err)
 	}
 
-	fmt.Fprintf(stderr, "plan: loaded %d paths from %s\n", doc.Paths.Len(), *spec)
+	fmt.Fprintf(stderr, "plan: loaded %d paths from %s\n", len(doc.Operations), *spec)
 
 	_ = out
 	_ = stdout

@@ -47,7 +47,7 @@ func runCmd(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 	}
 
 	fmt.Fprintf(stdout, "plan %s: %d operations; spec %s: %d paths\n",
-		*planFile, len(p.Order), specPath, doc.Paths.Len())
+		*planFile, len(p.Order), specPath, len(doc.Operations))
 
 	return nil
 }

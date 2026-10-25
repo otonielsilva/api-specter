@@ -26,15 +26,26 @@ type Operation struct {
 	ID     string
 	Method Method
 	Path   string
-	Body   *Schema
-	// BodyMediaType is the media type of Body, e.g. "application/json".
-	// It is empty when Body is nil.
-	BodyMediaType string
-	Params        []Param
+	// Bodies maps each media type the operation accepts (e.g.
+	// "application/json") to the schema of its request body. It is empty
+	// when the operation takes no body. A media type declared without a
+	// schema is present with a nil value.
+	Bodies map[string]*Schema
+	// BodyRequired reports whether the request must carry a body.
+	BodyRequired bool
+	Params       []Param
 	// Responses maps the status key exactly as written in the OpenAPI
-	// document ("200", "2XX" or "default") to the response body schema. The
-	// schema is nil when the response has no body, e.g. a 204.
-	Responses map[string]*Schema
+	// document ("200", "2XX" or "default") to the documented response.
+	Responses map[string]*Response
+}
+
+// Response is one documented response of an Operation.
+type Response struct {
+	// Bodies maps each media type the response can have (e.g.
+	// "application/json") to the schema of its body. It is empty when the
+	// response has no body, e.g. a 204. A media type declared without a
+	// schema is present with a nil value.
+	Bodies map[string]*Schema
 }
 
 // Schema describes the shape of a request or response body.
@@ -54,9 +65,9 @@ type Schema struct {
 	// unbounded.
 	Max *float64
 	// MinLength is the minimum length of a string. Nil means unbounded.
-	MinLength *int
+	MinLength *uint64
 	// MaxLength is the maximum length of a string. Nil means unbounded.
-	MaxLength *int
+	MaxLength *uint64
 	// Pattern is the regular expression a string must match. Empty means no
 	// constraint.
 	Pattern string
@@ -71,6 +82,12 @@ type Schema struct {
 	// Items is the schema of the elements. Only used when Type is
 	// SchemaTypeArray.
 	Items *Schema
+	// OneOf lists alternatives of which the value must match exactly one.
+	// Empty means the schema is not a oneOf.
+	OneOf []*Schema
+	// AnyOf lists alternatives of which the value must match at least one.
+	// Empty means the schema is not an anyOf.
+	AnyOf []*Schema
 }
 
 // SchemaType is the JSON type of a Schema.

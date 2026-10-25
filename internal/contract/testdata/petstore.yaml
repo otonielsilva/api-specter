@@ -1,0 +1,187 @@
+openapi: 3.0.3
+info:
+  title: Petstore fixture
+  version: "2.1.0"
+paths:
+  /pets:
+    get:
+      operationId: listPets
+      parameters:
+        - name: limit
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 100}
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [available, pending, sold]
+        - name: filter
+          in: query
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tag: {type: string}
+        - name: X-Request-Id
+          in: header
+          schema: {type: string, format: uuid}
+      responses:
+        "200":
+          description: a page of pets
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Pet'
+        default:
+          description: error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    post:
+      operationId: createPet
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewPet'
+      responses:
+        "201":
+          description: created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Pet'
+        "400":
+          description: invalid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /pets/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: {type: integer, minimum: 1}
+    get:
+      operationId: getPet
+      responses:
+        "200":
+          description: the pet
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Pet'
+        "404":
+          description: not found
+    put:
+      operationId: replacePet
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewPet'
+      responses:
+        "200":
+          description: replaced
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Pet'
+    delete:
+      operationId: deletePet
+      responses:
+        "204":
+          description: deleted
+  /pets/{id}/photo:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: {type: integer, minimum: 1}
+    post:
+      operationId: uploadPhoto
+      requestBody:
+        content:
+          application/octet-stream:
+            schema: {type: string, format: binary}
+      responses:
+        "204":
+          description: stored
+  /search:
+    post:
+      operationId: search
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [query]
+              properties:
+                query: {type: string, minLength: 1, maxLength: 64, pattern: '^[a-z ]+$'}
+                target:
+                  oneOf:
+                    - {type: string, format: uuid}
+                    - {type: integer}
+                options:
+                  anyOf:
+                    - {type: boolean}
+                    - {type: string, nullable: true}
+      responses:
+        "200":
+          description: results
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Pet'
+components:
+  schemas:
+    NewPet:
+      type: object
+      required: [name]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 50}
+        age: {type: integer, minimum: 0, maximum: 30}
+        weight: {type: number, minimum: 0}
+        species:
+          type: string
+          enum: [dog, cat, bird]
+        tags:
+          type: array
+          items: {type: string}
+        owner:
+          type: object
+          required: [email]
+          properties:
+            email: {type: string, format: email}
+            phone: {type: string, nullable: true}
+    Pet:
+      allOf:
+        - $ref: '#/components/schemas/NewPet'
+        - type: object
+          required: [id]
+          properties:
+            id: {type: integer}
+            createdAt: {type: string, format: date-time}
+    Node:
+      type: object
+      properties:
+        name: {type: string}
+        children:
+          type: array
+          items:
+            $ref: '#/components/schemas/Node'
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code: {type: integer}
+        message: {type: string}

@@ -1,0 +1,23 @@
+openapi: 3.0.3
+info:
+  title: Params fixture
+  version: "1.0"
+paths:
+  /pets/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: {type: integer, minimum: 1}
+      - name: q
+        in: query
+        schema: {type: string}
+    get:
+      operationId: getPet
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema: {type: string, maxLength: 5}
+      responses:
+        "200": {description: ok}

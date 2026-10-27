@@ -135,9 +135,9 @@ func convertSchema(s *openapi3.Schema, seen map[*openapi3.Schema]bool) *Schema {
 		Max:      s.Max,
 		Pattern:  s.Pattern,
 		Format:   s.Format,
-		Enum:     s.Enum,
+		Enum:     slices.Clone(s.Enum),
 		Nullable: s.Nullable,
-		Required: s.Required,
+		Required: slices.Clone(s.Required),
 	}
 
 	// OpenAPI 3.1 allows several types, e.g. ["string", "null"]. Keep the

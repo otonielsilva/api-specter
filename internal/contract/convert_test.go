@@ -355,3 +355,35 @@ func TestConvertResponses(t *testing.T) {
 	//   6. nil ResponseRef / Value nil -> skipped or empty, but no panic.
 	//      Decide which and write the decision into the test name.
 }
+
+func TestConvertSchemaDoesNotAliasDocument(t *testing.T) {
+	req := make([]string, 1, 4)
+	req[0] = "a"
+	enum := []any{"a", "b"}
+	doc := &openapi3.Schema{
+		Required: req,
+		Enum:     enum,
+		AllOf:    openapi3.SchemaRefs{{Value: &openapi3.Schema{Required: []string{"x"}}}},
+	}
+
+	got := convertSchema(doc, nil)
+
+	if got == nil {
+		t.Fatal("got nil, want non-nil")
+	}
+	// The allOf merge appends to Required; it must not write into the
+	// spare capacity of the document's own array.
+	if extra := req[:cap(req)][1]; extra != "" { //nolint:gosec // cap(req) is 4, so index 1 is in range
+		t.Errorf("document backing array was written: %q", extra)
+	}
+
+	got.Required[0] = "CHANGED"
+	if req[0] != "a" {
+		t.Errorf("document Required changed to %q", req[0])
+	}
+
+	got.Enum[0] = "CHANGED"
+	if enum[0] != "a" {
+		t.Errorf("document Enum changed to %v", enum[0])
+	}
+}

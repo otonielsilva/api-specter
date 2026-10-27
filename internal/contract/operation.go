@@ -1,5 +1,7 @@
 package contract
 
+import "cmp"
+
 // Method is an HTTP method, independent of the OpenAPI parsing library.
 type Method string
 
@@ -12,7 +14,42 @@ const (
 	DELETE  Method = "DELETE"
 	HEAD    Method = "HEAD"
 	OPTIONS Method = "OPTIONS"
+	TRACE   Method = "TRACE"
+	CONNECT Method = "CONNECT"
 )
+
+// methodRank defines the order of methods inside the same path. Methods
+// missing from the map rank after all known ones.
+var methodRank = map[Method]int{
+	POST:    1,
+	GET:     2,
+	PUT:     3,
+	PATCH:   4,
+	OPTIONS: 5,
+	HEAD:    6,
+	DELETE:  7,
+	TRACE:   8,
+	CONNECT: 9,
+}
+
+func rankOf(m Method) int {
+	if r, ok := methodRank[m]; ok {
+		return r
+	}
+	return len(methodRank) + 1
+}
+
+// compareOperations orders operations by path, then by methodRank, then by
+// method name, so two different methods never compare equal.
+func compareOperations(a, b Operation) int {
+	if c := cmp.Compare(a.Path, b.Path); c != 0 {
+		return c
+	}
+	if c := cmp.Compare(rankOf(a.Method), rankOf(b.Method)); c != 0 {
+		return c
+	}
+	return cmp.Compare(a.Method, b.Method)
+}
 
 // Contract is specter's model of an API description.
 type Contract struct {

@@ -2,6 +2,8 @@ package contract
 
 import (
 	"context"
+	"math/rand/v2"
+	"slices"
 	"testing"
 )
 
@@ -101,8 +103,112 @@ func TestParseOpenAPIErrors(t *testing.T) {
 }
 
 func TestParseOpenAPIDeterministicOrder(t *testing.T) {
-	t.Skip("TODO: write me, and make it pass by sorting Operations in the parser")
-	// Parse the same file 20 times and compare the list of operation IDs with
-	// reflect.DeepEqual. Today this fails randomly because Go map iteration is
-	// unordered. Fix in ParseOpenAPI: sort by Path, then Method, before returning.
+	spec := "testdata/petstore.yaml"
+
+	want := []string{
+		"POST /pets",
+		"GET /pets",
+		"GET /pets/{id}",
+		"PUT /pets/{id}",
+		"DELETE /pets/{id}",
+		"POST /pets/{id}/photo",
+		"POST /search",
+	}
+
+	for i := range 500 {
+		c, err := ParseOpenAPI(context.Background(), &spec)
+		if err != nil {
+			t.Fatalf("ParseOpenAPI() error = %v", err)
+		}
+		if len(c.Operations) != len(want) {
+			t.Fatalf("len(Operations) = %d, want %d", len(c.Operations), len(want))
+		}
+		for j := range c.Operations {
+			key := string(c.Operations[j].Method) + " " + c.Operations[j].Path
+			if key != want[j] {
+				t.Errorf("Execution[%d] len(Operations) = %d, want %d", i, len(c.Operations), len(want))
+			}
+		}
+	}
+}
+
+func TestSortOperations(t *testing.T) {
+	op := func(m Method, path string) Operation {
+		return Operation{Method: m, Path: path}
+	}
+
+	tests := []struct {
+		name string
+		in   []Operation
+		want []string
+	}{
+		{
+			name: "orders by path first",
+			in:   []Operation{op(GET, "/b"), op(DELETE, "/a"), op(POST, "/c")},
+			want: []string{"DELETE /a", "GET /b", "POST /c"},
+		},
+		{
+			name: "known methods follow methodRank",
+			in: []Operation{
+				op(DELETE, "/x"), op(HEAD, "/x"), op(OPTIONS, "/x"), op(PATCH, "/x"),
+				op(PUT, "/x"), op(GET, "/x"), op(POST, "/x"),
+			},
+			want: []string{
+				"POST /x", "GET /x", "PUT /x", "PATCH /x",
+				"OPTIONS /x", "HEAD /x", "DELETE /x",
+			},
+		},
+		{
+			name: "TRACE and CONNECT rank after the common methods",
+			in:   []Operation{op(CONNECT, "/x"), op(TRACE, "/x"), op(DELETE, "/x")},
+			want: []string{"DELETE /x", "TRACE /x", "CONNECT /x"},
+		},
+		{
+			name: "unknown method goes after every known one",
+			in:   []Operation{op("DUMMY", "/x"), op(CONNECT, "/x"), op(POST, "/x")},
+			want: []string{"POST /x", "CONNECT /x", "DUMMY /x"},
+		},
+		{
+			name: "unknown methods are ordered by name, not left tied",
+			in:   []Operation{op("ZED", "/x"), op("ALPHA", "/x"), op("MID", "/x")},
+			want: []string{"ALPHA /x", "MID /x", "ZED /x"},
+		},
+		{
+			name: "path wins over method rank",
+			in:   []Operation{op("DUMMY", "/a"), op(POST, "/b")},
+			want: []string{"DUMMY /a", "POST /b"},
+		},
+		{
+			name: "prefix path comes before the longer one",
+			in:   []Operation{op(GET, "/pets/{id}/photo"), op(GET, "/pets/{id}"), op(GET, "/pets")},
+			want: []string{"GET /pets", "GET /pets/{id}", "GET /pets/{id}/photo"},
+		},
+		{
+			name: "empty",
+			in:   nil,
+			want: []string{},
+		},
+	}
+
+	// A fixed seed keeps the shuffles reproducible.
+	rng := rand.New(rand.NewPCG(1, 2)) //nolint:gosec // a seeded PRNG keeps the shuffles reproducible
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			for i := range 50 {
+				ops := slices.Clone(tt.in)
+				rng.Shuffle(len(ops), func(a, b int) { ops[a], ops[b] = ops[b], ops[a] })
+
+				slices.SortFunc(ops, compareOperations)
+
+				got := make([]string, 0, len(ops))
+				for _, o := range ops {
+					got = append(got, string(o.Method)+" "+o.Path)
+				}
+				if !slices.Equal(got, tt.want) {
+					t.Fatalf("shuffle %d: got %v, want %v", i, got, tt.want)
+				}
+			}
+		})
+	}
 }

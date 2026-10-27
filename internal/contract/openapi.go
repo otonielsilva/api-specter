@@ -2,7 +2,6 @@ package contract
 
 import (
 	"context"
-	"fmt"
 	"slices"
 
 	"github.com/getkin/kin-openapi/openapi3"
@@ -44,9 +43,10 @@ func ParseOpenAPI(ctx context.Context, fileLocation *string) (*Contract, error) 
 		}
 	}
 
-	fmt.Println(contract)
+	// Sort so the result does not depend on map iteration order.
+	slices.SortFunc(contract.Operations, compareOperations)
 
-	return contract, err
+	return contract, nil
 }
 
 func convertBody(body *openapi3.RequestBodyRef) (map[string]*Schema, bool) {

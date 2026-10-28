@@ -469,17 +469,89 @@ func TestConvertBody(t *testing.T) {
 }
 
 func TestConvertResponses(t *testing.T) {
-	t.Skip("TODO: write me once convertResponses is implemented")
-	// Build with openapi3.NewResponses(...) or set values via the Responses
-	// map API of kin v0.151.0 (check `go doc github.com/getkin/kin-openapi/openapi3.Responses`).
-	// Table cases:
-	//   1. nil *Responses              -> nil map, no panic
-	//   2. "200" with JSON content     -> Responses["200"].Bodies["application/json"]
-	//   3. "204" without content       -> key "204" PRESENT, &Response{} with empty Bodies
-	//   4. "default" and "2XX" keys    -> kept exactly as written
-	//   5. media type without a schema -> key present with a nil value
-	//   6. nil ResponseRef / Value nil -> skipped or empty, but no panic.
-	//      Decide which and write the decision into the test name.
+	jsonOf := func(s *openapi3.Schema) openapi3.Content {
+		return openapi3.Content{"application/json": &openapi3.MediaType{Schema: s.NewRef()}}
+	}
+
+	tests := []struct {
+		name  string
+		input *openapi3.Responses
+		want  map[string]*Response
+	}{
+		{
+			name:  "nil responses",
+			input: nil,
+			want:  nil,
+		},
+		{
+			name: "JSON body under 200",
+			input: openapi3.NewResponses(
+				openapi3.WithStatus(200, &openapi3.ResponseRef{Value: &openapi3.Response{
+					Content: jsonOf(openapi3.NewStringSchema()),
+				}}),
+			),
+			want: map[string]*Response{
+				"200": {Bodies: map[string]*Schema{"application/json": {Type: SchemaTypeString}}},
+			},
+		},
+		{
+			// A 204 is documented information, so the key stays; Bodies is an
+			// empty non-nil map, not nil.
+			name: "204 without content is present with empty bodies",
+			input: openapi3.NewResponses(
+				openapi3.WithStatus(204, &openapi3.ResponseRef{Value: &openapi3.Response{}}),
+			),
+			want: map[string]*Response{
+				"204": {Bodies: map[string]*Schema{}},
+			},
+		},
+		{
+			name: "default and 2XX keys are kept as written",
+			input: openapi3.NewResponses(
+				openapi3.WithName("2XX", &openapi3.Response{Content: jsonOf(openapi3.NewIntegerSchema())}),
+				openapi3.WithName("default", &openapi3.Response{Content: jsonOf(openapi3.NewBoolSchema())}),
+			),
+			want: map[string]*Response{
+				"2XX":     {Bodies: map[string]*Schema{"application/json": {Type: SchemaTypeInteger}}},
+				"default": {Bodies: map[string]*Schema{"application/json": {Type: SchemaTypeBoolean}}},
+			},
+		},
+		{
+			name: "media type without a schema keeps the key with a nil value",
+			input: openapi3.NewResponses(
+				openapi3.WithName("200", &openapi3.Response{
+					Content: openapi3.Content{"text/plain": &openapi3.MediaType{}},
+				}),
+			),
+			want: map[string]*Response{
+				"200": {Bodies: map[string]*Schema{"text/plain": nil}},
+			},
+		},
+		{
+			name: "nil ref and ref with nil value are skipped",
+			input: func() *openapi3.Responses {
+				r := openapi3.NewResponses()
+				r.Set("404", nil)
+				r.Set("500", &openapi3.ResponseRef{Value: nil})
+				r.Set("200", &openapi3.ResponseRef{Value: &openapi3.Response{}})
+				return r
+			}(),
+			want: map[string]*Response{
+				"200": {Bodies: map[string]*Schema{}},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := convertResponses(tt.input)
+			// DeepEqual tells nil from empty maps, which matters for both the
+			// outer map and each Bodies.
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("responses = %+v, want %+v", got, tt.want)
+			}
+		})
+	}
 }
 
 func TestConvertSchemaDoesNotAliasDocument(t *testing.T) {

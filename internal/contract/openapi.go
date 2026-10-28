@@ -49,21 +49,26 @@ func ParseOpenAPI(ctx context.Context, fileLocation *string) (*Contract, error) 
 	return contract, nil
 }
 
-func convertBody(body *openapi3.RequestBodyRef) (map[string]*Schema, bool) {
-	if body == nil || body.Value == nil {
-		return nil, false
-	}
-
-	bodies := make(map[string]*Schema, len(body.Value.Content))
-	for mediaType, mt := range body.Value.Content {
-		// A media type declared without a schema is kept with a nil value.
+// convertContent converts a media type map into schemas. A media type declared
+// without a schema is kept with a nil value. The result is never nil.
+func convertContent(content openapi3.Content) map[string]*Schema {
+	bodies := make(map[string]*Schema, len(content))
+	for mediaType, mt := range content {
 		var schema *Schema
 		if mt != nil && mt.Schema != nil {
 			schema = convertSchema(mt.Schema.Value, nil)
 		}
 		bodies[mediaType] = schema
 	}
-	return bodies, body.Value.Required
+	return bodies
+}
+
+func convertBody(body *openapi3.RequestBodyRef) (map[string]*Schema, bool) {
+	if body == nil || body.Value == nil {
+		return nil, false
+	}
+
+	return convertContent(body.Value.Content), body.Value.Required
 }
 
 // convertParams merges the parameters shared by every operation of a path
@@ -230,8 +235,19 @@ func convertAlternatives(refs openapi3.SchemaRefs, seen map[*openapi3.Schema]boo
 }
 
 // convertResponses converts the responses of an operation, keyed by status
-// exactly as written in the document.
-func convertResponses(_ *openapi3.Responses) map[string]*Response {
-	// TODO: implement.
-	return nil
+// exactly as written in the document. A response without content is kept with
+// empty Bodies; a nil ref or a ref without a value is skipped.
+func convertResponses(r *openapi3.Responses) map[string]*Response {
+	if r == nil {
+		return nil
+	}
+
+	responses := make(map[string]*Response, r.Len())
+	for status, ref := range r.Map() {
+		if ref == nil || ref.Value == nil {
+			continue
+		}
+		responses[status] = &Response{Bodies: convertContent(ref.Value.Content)}
+	}
+	return responses
 }

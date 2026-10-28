@@ -306,23 +306,77 @@ func TestConvertParams(t *testing.T) {
 
 // TestConvertSchemaAllOfItems covers a gap in TestConvertSchema/allOf.
 func TestConvertSchemaAllOfItems(t *testing.T) {
-	t.Skip("TODO: write me")
-	// Build an array schema whose items come only from an allOf member:
-	//   &openapi3.Schema{AllOf: SchemaRefs{ NewArraySchema().WithItems(NewStringSchema()).NewRef() }}
-	// Expect: got.Type == array and got.Items.Type == string (inherited).
-	// Second case: the outer schema already has Items; the allOf member must
-	// NOT overwrite them.
+	t.Run("items inherited from allOf member", func(t *testing.T) {
+		in := &openapi3.Schema{AllOf: openapi3.SchemaRefs{
+			openapi3.NewArraySchema().WithItems(openapi3.NewStringSchema()).NewRef(),
+		}}
+
+		got := convertSchema(in, nil)
+
+		if got.Type != SchemaTypeArray {
+			t.Errorf("Type = %q, want array", got.Type)
+		}
+		if got.Items == nil || got.Items.Type != SchemaTypeString {
+			t.Errorf("Items = %+v, want string", got.Items)
+		}
+	})
+
+	t.Run("outer items are not overwritten by allOf member", func(t *testing.T) {
+		in := openapi3.NewArraySchema().WithItems(openapi3.NewIntegerSchema())
+		in.AllOf = openapi3.SchemaRefs{
+			openapi3.NewArraySchema().WithItems(openapi3.NewStringSchema()).NewRef(),
+		}
+
+		got := convertSchema(in, nil)
+
+		if got.Items == nil || got.Items.Type != SchemaTypeInteger {
+			t.Errorf("Items = %+v, want the outer integer items", got.Items)
+		}
+	})
 }
 
 // TestConvertSchemaAlternativesSkipped covers convertAlternatives.
 func TestConvertSchemaAlternativesSkipped(t *testing.T) {
-	t.Skip("TODO: write me")
-	// OneOf containing a nil ref and a ref with Value == nil, plus one valid
-	// string schema. Expect: OneOf has exactly 1 element.
-	// Another case: every alternative is nil. Expect: OneOf == nil (not an
-	// empty non-nil slice), so assert with `got.OneOf != nil`.
-	// A oneOf whose member refers back to the parent is cut off by the cycle
-	// guard; expect it to be skipped, not to appear as a nil element.
+	t.Run("nil ref and nil value are skipped", func(t *testing.T) {
+		in := &openapi3.Schema{OneOf: openapi3.SchemaRefs{
+			nil,
+			{Value: nil},
+			openapi3.NewStringSchema().NewRef(),
+		}}
+
+		got := convertSchema(in, nil)
+
+		if len(got.OneOf) != 1 || got.OneOf[0].Type != SchemaTypeString {
+			t.Errorf("OneOf = %+v, want exactly [string]", got.OneOf)
+		}
+	})
+
+	t.Run("all alternatives nil gives a nil slice", func(t *testing.T) {
+		in := &openapi3.Schema{
+			OneOf: openapi3.SchemaRefs{nil, {Value: nil}},
+			AnyOf: openapi3.SchemaRefs{nil},
+		}
+
+		got := convertSchema(in, nil)
+
+		if got.OneOf != nil {
+			t.Errorf("OneOf = %#v, want nil", got.OneOf)
+		}
+		if got.AnyOf != nil {
+			t.Errorf("AnyOf = %#v, want nil", got.AnyOf)
+		}
+	})
+
+	t.Run("alternative pointing back to the parent is skipped", func(t *testing.T) {
+		parent := &openapi3.Schema{}
+		parent.OneOf = openapi3.SchemaRefs{parent.NewRef(), openapi3.NewStringSchema().NewRef()}
+
+		got := convertSchema(parent, nil)
+
+		if len(got.OneOf) != 1 || got.OneOf[0] == nil || got.OneOf[0].Type != SchemaTypeString {
+			t.Errorf("OneOf = %+v, want only the string alternative", got.OneOf)
+		}
+	})
 }
 
 func TestConvertBody(t *testing.T) {

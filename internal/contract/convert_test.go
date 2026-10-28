@@ -380,20 +380,92 @@ func TestConvertSchemaAlternativesSkipped(t *testing.T) {
 }
 
 func TestConvertBody(t *testing.T) {
-	t.Skip("TODO: write me")
-	// Build the input in Go, no YAML. Example:
-	//   &openapi3.RequestBodyRef{Value: openapi3.NewRequestBody().
-	//       WithRequired(true).WithJSONSchema(openapi3.NewStringSchema())}
-	// Table cases (use t.Run and a struct with name/input/wantBodies/wantRequired):
-	//   1. nil ref                      -> nil, false
-	//   2. ref with Value == nil        -> nil, false
-	//   3. required JSON body           -> {"application/json": string}, true
-	//   4. optional body                -> same bodies, false
-	//   5. two media types              -> both keys present (check len == 2)
-	//   6. media type without a schema  -> key present with a nil value. Use
-	//      `v, ok := got["text/plain"]` to tell "nil value" from "missing key".
-	//   7. non-JSON media type          -> "application/octet-stream" with
-	//      Type string and Format "binary".
+	tests := []struct {
+		name       string
+		input      *openapi3.RequestBodyRef
+		wantBodies map[string]*Schema
+		required   bool
+	}{
+		{
+			name:       "nil ref",
+			input:      nil,
+			wantBodies: nil,
+			required:   false,
+		},
+		{
+			name: "String Schema",
+			input: &openapi3.RequestBodyRef{Value: openapi3.NewRequestBody().
+				WithRequired(true).WithJSONSchema(openapi3.NewStringSchema())},
+			wantBodies: map[string]*Schema{"application/json": {Type: SchemaTypeString}},
+			required:   true,
+		},
+		{
+			// The ref exists but points at nothing, same outcome as a nil ref.
+			name:       "ref with nil value",
+			input:      &openapi3.RequestBodyRef{Value: nil},
+			wantBodies: nil,
+			required:   false,
+		},
+		{
+			name: "optional body keeps bodies and is not required",
+			input: &openapi3.RequestBodyRef{Value: openapi3.NewRequestBody().
+				WithRequired(false).WithJSONSchema(openapi3.NewStringSchema())},
+			wantBodies: map[string]*Schema{"application/json": {Type: SchemaTypeString}},
+			required:   false,
+		},
+		{
+			// Different schemas per key prove each media type got its own
+			// schema, not just that both keys exist.
+			name: "two media types",
+			input: &openapi3.RequestBodyRef{Value: openapi3.NewRequestBody().
+				WithContent(openapi3.Content{
+					"application/json": &openapi3.MediaType{Schema: openapi3.NewStringSchema().NewRef()},
+					"text/plain":       &openapi3.MediaType{Schema: openapi3.NewIntegerSchema().NewRef()},
+				})},
+			wantBodies: map[string]*Schema{
+				"application/json": {Type: SchemaTypeString},
+				"text/plain":       {Type: SchemaTypeInteger},
+			},
+			required: false,
+		},
+		{
+			// DeepEqual tells a present key holding nil apart from a missing
+			// key, so no `v, ok :=` lookup is needed here.
+			name: "media type without a schema keeps the key with a nil value",
+			input: &openapi3.RequestBodyRef{Value: openapi3.NewRequestBody().
+				WithContent(openapi3.Content{"text/plain": &openapi3.MediaType{}})},
+			wantBodies: map[string]*Schema{"text/plain": nil},
+			required:   false,
+		},
+		{
+			// convertBody does not invent a schema: it passes through the
+			// string/binary one declared in the document.
+			name: "binary octet-stream",
+			input: &openapi3.RequestBodyRef{Value: openapi3.NewRequestBody().
+				WithContent(openapi3.Content{
+					"application/octet-stream": &openapi3.MediaType{
+						Schema: openapi3.NewStringSchema().WithFormat("binary").NewRef(),
+					},
+				})},
+			wantBodies: map[string]*Schema{
+				"application/octet-stream": {Type: SchemaTypeString, Format: "binary"},
+			},
+			required: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body, converted := convertBody(tt.input)
+			if converted != tt.required {
+				t.Errorf("required = %v, want %v", converted, tt.required)
+			}
+			// DeepEqual also catches extra keys and nil vs empty maps.
+			if !reflect.DeepEqual(body, tt.wantBodies) {
+				t.Errorf("bodies = %+v, want %+v", body, tt.wantBodies)
+			}
+		})
+	}
 }
 
 func TestConvertResponses(t *testing.T) {

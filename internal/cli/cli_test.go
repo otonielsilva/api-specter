@@ -2,12 +2,16 @@ package cli
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/otonielsilva/api-specter/internal/plan"
 )
 
 func TestRun(t *testing.T) {
@@ -67,6 +71,53 @@ func TestPlanCmd(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestPlanCmdWritesPlan(t *testing.T) {
+	specPath := filepath.Join(t.TempDir(), "spec.yaml")
+	const doc = `openapi: 3.0.3
+info: {title: t, version: "1"}
+paths:
+  /pets:
+    get:
+      responses: {"200": {description: ok}}
+`
+	if err := os.WriteFile(specPath, []byte(doc), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("stdout", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		if err := planCmd(t.Context(), []string{"--spec", specPath}, &stdout, &stderr); err != nil {
+			t.Fatalf("planCmd = %v", err)
+		}
+		var got plan.Plan
+		if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
+			t.Fatalf("stdout is not a plan: %v\n%s", err, stdout.String())
+		}
+		if want := []string{"GET /pets"}; !reflect.DeepEqual(got.Order, want) {
+			t.Errorf("Order = %v, want %v", got.Order, want)
+		}
+	})
+
+	t.Run("--out writes the file and leaves stdout empty", func(t *testing.T) {
+		outPath := filepath.Join(t.TempDir(), "plan.json")
+		var stdout, stderr bytes.Buffer
+		if err := planCmd(t.Context(), []string{"--spec", specPath, "--out", outPath}, &stdout, &stderr); err != nil {
+			t.Fatalf("planCmd = %v", err)
+		}
+		if stdout.Len() != 0 {
+			t.Errorf("stdout = %q, want empty", stdout.String())
+		}
+		f, err := os.Open(outPath) //nolint:gosec // outPath is a temp file made by this test
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer f.Close()
+		if _, err := plan.Load(f); err != nil {
+			t.Errorf("plan.Load(out) = %v", err)
+		}
+	})
 }
 
 func TestRunCmd(t *testing.T) {

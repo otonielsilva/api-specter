@@ -2,12 +2,15 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"os"
 
 	"github.com/otonielsilva/api-specter/internal/contract"
+	"github.com/otonielsilva/api-specter/internal/plan"
 )
 
 // planCmd implements "specter plan". It is named planCmd so it does not
@@ -37,9 +40,23 @@ func planCmd(ctx context.Context, args []string, stdout, stderr io.Writer) error
 		return fmt.Errorf("plan: load spec  -> %s: %w", *spec, err)
 	}
 
-	fmt.Fprintf(stderr, "plan: loaded %d paths from %s\n", len(doc.Operations), *spec)
+	raw, err := os.ReadFile(*spec)
+	if err != nil {
+		return fmt.Errorf("plan: read spec %s: %w", *spec, err)
+	}
+	p := plan.Build(doc, *spec, raw)
 
-	_ = out
-	_ = stdout
-	return errors.New("plan: not implemented yet")
+	fmt.Fprintf(stderr, "plan created %d paths from %s\n", len(doc.Operations), *spec)
+
+	data, err := json.MarshalIndent(p, "", "  ")
+	if err != nil {
+		return fmt.Errorf("plan: marshal: %w", err)
+	}
+	data = append(data, '\n')
+
+	if *out == "" {
+		_, err := stdout.Write(data)
+		return err
+	}
+	return os.WriteFile(*out, data, 0o600) //nolint:gosec // the path comes from --out on purpose
 }

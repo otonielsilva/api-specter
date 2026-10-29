@@ -3,7 +3,7 @@ module github.com/otonielsilva/api-specter
 go 1.27
 
 require (
-	github.com/getkin/kin-openapi v0.151.0
+	github.com/getkin/kin-openapi v0.152.0
 	github.com/joho/godotenv v1.5.1
 )
 

@@ -120,20 +120,20 @@ func convertParams(pathParams, opParams openapi3.Parameters) []Param {
 	return params
 }
 
-// convertSchema converts a kin-openapi schema into specter's Schema. seen
-// holds the schemas on the current recursion path, so a schema that refers
-// to itself is cut off instead of recursing forever.
-func convertSchema(s *openapi3.Schema, seen map[*openapi3.Schema]bool) *Schema {
-	if s == nil || seen[s] {
+// convertSchema converts a kin-openapi schema into specter's Schema. memo
+// maps each kin schema already converted to its result, so a schema that
+// refers to itself comes back as a pointer to the same *Schema: the cycle
+// stays in the graph instead of being cut off. A nil memo starts a fresh one.
+func convertSchema(s *openapi3.Schema, memo map[*openapi3.Schema]*Schema) *Schema {
+	if s == nil {
 		return nil
 	}
-	// Copy-on-write: each branch of the recursion gets its own set, so two
-	// sibling properties may share a schema without being seen as a cycle.
-	next := make(map[*openapi3.Schema]bool, len(seen)+1)
-	for k := range seen {
-		next[k] = true
+	if memo == nil {
+		memo = make(map[*openapi3.Schema]*Schema)
 	}
-	next[s] = true
+	if got, ok := memo[s]; ok {
+		return got
+	}
 
 	out := &Schema{
 		Min:      s.Min,
@@ -144,6 +144,9 @@ func convertSchema(s *openapi3.Schema, seen map[*openapi3.Schema]bool) *Schema {
 		Nullable: s.Nullable,
 		Required: slices.Clone(s.Required),
 	}
+	// Register before recursing: a reference back to s finds out, which is
+	// still being filled in, and that closes the cycle.
+	memo[s] = out
 
 	// OpenAPI 3.1 allows several types, e.g. ["string", "null"]. Keep the
 	// first real type and fold "null" into Nullable.
@@ -175,15 +178,15 @@ func convertSchema(s *openapi3.Schema, seen map[*openapi3.Schema]bool) *Schema {
 			if ref == nil {
 				continue
 			}
-			out.Properties[name] = convertSchema(ref.Value, next)
+			out.Properties[name] = convertSchema(ref.Value, memo)
 		}
 	}
 	if s.Items != nil {
-		out.Items = convertSchema(s.Items.Value, next)
+		out.Items = convertSchema(s.Items.Value, memo)
 	}
 
-	out.OneOf = convertAlternatives(s.OneOf, next)
-	out.AnyOf = convertAlternatives(s.AnyOf, next)
+	out.OneOf = convertAlternatives(s.OneOf, memo)
+	out.AnyOf = convertAlternatives(s.AnyOf, memo)
 
 	// allOf means the value satisfies every sub-schema, so merging their
 	// properties and required names is a faithful translation.
@@ -191,7 +194,7 @@ func convertSchema(s *openapi3.Schema, seen map[*openapi3.Schema]bool) *Schema {
 		if ref == nil {
 			continue
 		}
-		sub := convertSchema(ref.Value, next)
+		sub := convertSchema(ref.Value, memo)
 		if sub == nil {
 			continue
 		}
@@ -221,13 +224,13 @@ func convertSchema(s *openapi3.Schema, seen map[*openapi3.Schema]bool) *Schema {
 // convertAlternatives converts the sub-schemas of a oneOf or anyOf. Entries
 // that cannot be converted (nil, or cut off as a cycle) are skipped, and the
 // result is nil when there is nothing left.
-func convertAlternatives(refs openapi3.SchemaRefs, seen map[*openapi3.Schema]bool) []*Schema {
+func convertAlternatives(refs openapi3.SchemaRefs, memo map[*openapi3.Schema]*Schema) []*Schema {
 	var alts []*Schema
 	for _, ref := range refs {
 		if ref == nil {
 			continue
 		}
-		if alt := convertSchema(ref.Value, seen); alt != nil {
+		if alt := convertSchema(ref.Value, memo); alt != nil {
 			alts = append(alts, alt)
 		}
 	}

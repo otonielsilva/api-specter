@@ -189,7 +189,7 @@ func TestConvertSchema(t *testing.T) {
 			},
 		},
 		{
-			name: "self reference is cut off instead of recursing forever",
+			name: "self reference points back to the same schema",
 			build: func() *openapi3.Schema {
 				node := openapi3.NewObjectSchema()
 				node.Properties = openapi3.Schemas{"next": node.NewRef()}
@@ -199,8 +199,8 @@ func TestConvertSchema(t *testing.T) {
 				if got.Type != SchemaTypeObject {
 					t.Fatalf("Type = %q, want object", got.Type)
 				}
-				if next, ok := got.Properties["next"]; !ok || next != nil {
-					t.Errorf("next = %+v (present=%v), want present and nil", next, ok)
+				if next := got.Properties["next"]; next != got {
+					t.Errorf("next = %p, want %p (same schema)", next, got)
 				}
 			},
 		},
@@ -367,14 +367,14 @@ func TestConvertSchemaAlternativesSkipped(t *testing.T) {
 		}
 	})
 
-	t.Run("alternative pointing back to the parent is skipped", func(t *testing.T) {
+	t.Run("alternative pointing back to the parent is the parent", func(t *testing.T) {
 		parent := &openapi3.Schema{}
 		parent.OneOf = openapi3.SchemaRefs{parent.NewRef(), openapi3.NewStringSchema().NewRef()}
 
 		got := convertSchema(parent, nil)
 
-		if len(got.OneOf) != 1 || got.OneOf[0] == nil || got.OneOf[0].Type != SchemaTypeString {
-			t.Errorf("OneOf = %+v, want only the string alternative", got.OneOf)
+		if len(got.OneOf) != 2 || got.OneOf[0] != got || got.OneOf[1].Type != SchemaTypeString {
+			t.Errorf("OneOf = %+v, want [parent, string]", got.OneOf)
 		}
 	})
 }

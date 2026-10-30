@@ -1,0 +1,46 @@
+openapi: 3.0.3
+info:
+  title: Cycle fixture
+  version: "1.0"
+paths:
+  /ingredients:
+    post:
+      operationId: createIngredient
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Ingredient"
+      responses:
+        "201":
+          description: created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Ingredient"
+components:
+  schemas:
+    # Ingredient refers to itself through sub_ingredients.items, so the
+    # converted graph has a cycle: Ingredient -> sub_ingredients -> Items
+    # -> Ingredient.
+    #
+    # Ingredient also reaches itself through Supplier, a mutual cycle:
+    # Ingredient -> origin -> Supplier -> main_product -> Ingredient.
+    Ingredient:
+      type: object
+      required: [name]
+      properties:
+        name: {type: string}
+        sub_ingredients:
+          type: array
+          items:
+            $ref: "#/components/schemas/Ingredient"
+        origin:
+          $ref: "#/components/schemas/Supplier"
+    Supplier:
+      type: object
+      properties:
+        name: {type: string}
+        main_product:
+          $ref: "#/components/schemas/Ingredient"

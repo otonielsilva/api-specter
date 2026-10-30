@@ -49,13 +49,16 @@ func TestParseOpenAPIMergesPathAndOperationParams(t *testing.T) {
 
 // The tests below use testdata/petstore.yaml. Operations come out of
 // ParseOpenAPI in random order, so look them up by ID with a helper:
-//
-//	func findOp(t *testing.T, c *Contract, id string) Operation {
-//		t.Helper()
-//		for _, op := range c.Operations { if op.ID == id { return op } }
-//		t.Fatalf("operation %q not found", id)
-//		return Operation{}
-//	}
+func findOp(t *testing.T, c *Contract, id string) Operation {
+	t.Helper()
+	for _, op := range c.Operations {
+		if op.ID == id {
+			return op
+		}
+	}
+	t.Fatalf("operation %q not found", id)
+	return Operation{}
+}
 
 func TestParseOpenAPIPetstoreMetadata(t *testing.T) {
 	t.Skip("TODO: write me")
@@ -210,5 +213,38 @@ func TestSortOperations(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestParseOpenAPIRecursiveSchemaSharesPointer(t *testing.T) {
+	spec := "testdata/cycle.yaml"
+	c, err := ParseOpenAPI(context.Background(), &spec)
+	if err != nil {
+		t.Fatalf("ParseOpenAPI: %v", err)
+	}
+
+	op := findOp(t, c, "createIngredient")
+
+	ing := op.Bodies["application/json"]
+	if ing == nil {
+		t.Fatal("body is nil")
+	}
+
+	// Direct cycle: Ingredient -> sub_ingredients -> Items -> Ingredient.
+	sub := ing.Properties["sub_ingredients"]
+	if sub == nil {
+		t.Fatal("sub_ingredients is nil")
+	}
+	if sub.Items != ing {
+		t.Errorf("sub_ingredients.Items = %p, want %p (Ingredient)", sub.Items, ing)
+	}
+
+	// Mutual cycle: Ingredient -> origin -> main_product -> Ingredient.
+	supplier := ing.Properties["origin"]
+	if supplier == nil {
+		t.Fatal("origin is nil")
+	}
+	if got := supplier.Properties["main_product"]; got != ing {
+		t.Errorf("origin.main_product = %p, want %p (Ingredient)", got, ing)
 	}
 }

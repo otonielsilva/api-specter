@@ -2,20 +2,22 @@ package contract
 
 import (
 	"context"
+	"fmt"
 	"slices"
 
 	"github.com/getkin/kin-openapi/openapi3"
 )
 
 // ParseOpenAPI loads the OpenAPI document at fileLocation.
-func ParseOpenAPI(ctx context.Context, fileLocation *string) (*Contract, error) {
+func ParseOpenAPI(ctx context.Context, fileLocation string) (*Contract, error) {
 	loader := openapi3.NewLoader()
-	doc, err := loader.LoadFromFile(*fileLocation)
+	loader.Context = ctx
+	doc, err := loader.LoadFromFile(fileLocation)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("load %s: %w", fileLocation, err)
 	}
 	if err := doc.Validate(ctx); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("validate %s: %w", fileLocation, err)
 	}
 
 	// One memo for the whole document: a schema used by several bodies,

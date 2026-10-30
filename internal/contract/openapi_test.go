@@ -2,7 +2,10 @@ package contract
 
 import (
 	"context"
+	"errors"
 	"math/rand/v2"
+	"os"
+	"path/filepath"
 	"slices"
 	"testing"
 )
@@ -10,7 +13,7 @@ import (
 func TestParseOpenAPIMergesPathAndOperationParams(t *testing.T) {
 	spec := "testdata/params.yaml"
 
-	c, err := ParseOpenAPI(context.Background(), &spec)
+	c, err := ParseOpenAPI(context.Background(), spec)
 	if err != nil {
 		t.Fatalf("ParseOpenAPI() error = %v", err)
 	}
@@ -61,49 +64,78 @@ func findOp(t *testing.T, c *Contract, id string) Operation {
 	return Operation{}
 }
 
-func TestParseOpenAPIPetstoreMetadata(t *testing.T) {
-	t.Skip("TODO: write me")
-	// Parse testdata/petstore.yaml. Expect Title "Petstore fixture",
-	// Version "2.1.0" and len(Operations) == 7.
-	// Then check Method and Path of each operation through findOp:
-	// listPets GET /pets, createPet POST /pets, getPet GET /pets/{id}, ...
-}
-
-func TestParseOpenAPIPetstoreBodies(t *testing.T) {
-	t.Skip("TODO: write me")
-	// Use findOp. Expectations from the fixture:
-	//   getPet / deletePet : Bodies empty, BodyRequired false
-	//   createPet          : "application/json" with object schema, BodyRequired true,
-	//                        Properties include name/age/owner, Required == [name]
-	//   replacePet         : same bodies, BodyRequired false
-	//   uploadPhoto        : only "application/octet-stream", Type string, Format binary
-	//   search             : target has 2 OneOf alternatives, options has 2 AnyOf
-}
-
-func TestParseOpenAPIPetstoreParams(t *testing.T) {
-	t.Skip("TODO: write me")
-	// listPets params: limit (query, int 1..100), status (query, enum of 3),
-	// filter (query, object from content), X-Request-Id (header, format uuid).
-	// getPet: the path-level "id" must be inherited (In path, Required, Min 1).
-	// Tip: build a map[string]Param by Name first so order does not matter.
-}
-
 func TestParseOpenAPIPetstoreAllOf(t *testing.T) {
-	t.Skip("TODO: write me")
-	// Operation getPet has no body, so reach Pet through the response once
-	// convertResponses exists. Until then, add an operation that uses Pet as a
-	// request body in the fixture, or test convertSchema directly.
-	// Expect Pet to have name, age, owner (from NewPet) plus id and createdAt,
-	// and Required containing both "name" and "id".
+	c, err := ParseOpenAPI(context.Background(), "testdata/petstore.yaml")
+	if err != nil {
+		t.Fatalf("ParseOpenAPI() error = %v", err)
+	}
+
+	resp := findOp(t, c, "getPet").Responses["200"]
+	if resp == nil {
+		t.Fatal("getPet has no 200 response")
+	}
+	pet := resp.Bodies["application/json"]
+	if pet == nil {
+		t.Fatal("getPet 200 has no application/json schema")
+	}
+
+	// name, age and owner come from NewPet; id and createdAt from the inline half.
+	for _, name := range []string{"name", "age", "owner", "id", "createdAt"} {
+		if pet.Properties[name] == nil {
+			t.Errorf("Pet is missing property %q", name)
+		}
+	}
+	for _, name := range []string{"name", "id"} {
+		if !slices.Contains(pet.Required, name) {
+			t.Errorf("Pet.Required = %v, want it to contain %q", pet.Required, name)
+		}
+	}
 }
 
 func TestParseOpenAPIErrors(t *testing.T) {
-	t.Skip("TODO: write me")
-	// Table of bad inputs, each must return a non-nil error and a nil *Contract:
-	//   1. path that does not exist
-	//   2. a file with invalid YAML (write it with t.TempDir() + os.WriteFile)
-	//   3. valid YAML that fails doc.Validate (e.g. a path without responses)
-	// Use errors.Is(err, os.ErrNotExist) for case 1.
+	dir := t.TempDir()
+
+	badYAML := filepath.Join(dir, "bad.yaml")
+	if err := os.WriteFile(badYAML, []byte("openapi: [unclosed\n  : :"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Parses fine but fails doc.Validate: the operation has no responses.
+	invalid := filepath.Join(dir, "invalid.yaml")
+	const noResponses = `openapi: 3.0.3
+info: {title: t, version: "1"}
+paths:
+  /x:
+    get:
+      operationId: x
+`
+	if err := os.WriteFile(invalid, []byte(noResponses), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name    string
+		path    string
+		wantErr error // optional: the error chain must contain it
+	}{
+		{"missing file", filepath.Join(dir, "nope.yaml"), os.ErrNotExist},
+		{"invalid yaml", badYAML, nil},
+		{"fails validation", invalid, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c, err := ParseOpenAPI(context.Background(), tt.path)
+			if err == nil {
+				t.Fatal("error = nil, want an error")
+			}
+			if c != nil {
+				t.Errorf("contract = %+v, want nil", c)
+			}
+			if tt.wantErr != nil && !errors.Is(err, tt.wantErr) {
+				t.Errorf("error = %v, want it to wrap %v", err, tt.wantErr)
+			}
+		})
+	}
 }
 
 func TestParseOpenAPIDeterministicOrder(t *testing.T) {
@@ -120,7 +152,7 @@ func TestParseOpenAPIDeterministicOrder(t *testing.T) {
 	}
 
 	for i := range 500 {
-		c, err := ParseOpenAPI(context.Background(), &spec)
+		c, err := ParseOpenAPI(context.Background(), spec)
 		if err != nil {
 			t.Fatalf("ParseOpenAPI() error = %v", err)
 		}
@@ -219,7 +251,7 @@ func TestSortOperations(t *testing.T) {
 
 func TestParseOpenAPIRecursiveSchemaSharesPointer(t *testing.T) {
 	spec := "testdata/cycle.yaml"
-	c, err := ParseOpenAPI(context.Background(), &spec)
+	c, err := ParseOpenAPI(context.Background(), spec)
 	if err != nil {
 		t.Fatalf("ParseOpenAPI: %v", err)
 	}
@@ -254,7 +286,7 @@ func TestParseOpenAPIRecursiveSchemaSharesPointer(t *testing.T) {
 // and the one of the 201 response are the same *Schema.
 func TestParseOpenAPISharesSchemaAcrossRequestAndResponse(t *testing.T) {
 	spec := "testdata/cycle.yaml"
-	c, err := ParseOpenAPI(context.Background(), &spec)
+	c, err := ParseOpenAPI(context.Background(), spec)
 	if err != nil {
 		t.Fatalf("ParseOpenAPI: %v", err)
 	}

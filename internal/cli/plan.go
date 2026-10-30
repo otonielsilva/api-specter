@@ -35,9 +35,9 @@ func planCmd(ctx context.Context, args []string, stdout, stderr io.Writer) error
 		return fmt.Errorf("plan: --spec is required: %w", ErrUsage)
 	}
 
-	doc, err := contract.ParseOpenAPI(ctx, spec)
+	doc, err := contract.ParseOpenAPI(ctx, *spec)
 	if err != nil {
-		return fmt.Errorf("plan: load spec  -> %s: %w", *spec, err)
+		return fmt.Errorf("plan: %w", err)
 	}
 
 	raw, err := os.ReadFile(*spec)

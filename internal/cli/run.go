@@ -41,9 +41,9 @@ func runCmd(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 
 	specPath := specLocation(*planFile, p.Spec.Path, *spec)
 
-	doc, err := contract.ParseOpenAPI(ctx, &specPath)
+	doc, err := contract.ParseOpenAPI(ctx, specPath)
 	if err != nil {
-		return fmt.Errorf("run: load spec %s: %w", specPath, err)
+		return fmt.Errorf("run: %w", err)
 	}
 
 	fmt.Fprintf(stdout, "plan %s: %d operations; spec %s: %d paths\n",

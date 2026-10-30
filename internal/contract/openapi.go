@@ -18,6 +18,11 @@ func ParseOpenAPI(ctx context.Context, fileLocation *string) (*Contract, error) 
 		return nil, err
 	}
 
+	// One memo for the whole document: a schema used by several bodies,
+	// parameters and responses converts to a single *Schema, so request and
+	// response share the same pointer.
+	memo := make(map[*openapi3.Schema]*Schema)
+
 	contract := &Contract{
 		Title:      doc.Info.Title,
 		Version:    doc.Info.Version,
@@ -26,16 +31,16 @@ func ParseOpenAPI(ctx context.Context, fileLocation *string) (*Contract, error) 
 
 	for path, pathItem := range doc.Paths.Map() {
 		for method, op := range pathItem.Operations() {
-			requestBodies, required := convertBody(op.RequestBody)
+			requestBodies, required := convertBody(op.RequestBody, memo)
 
 			operation := Operation{
 				ID:           op.OperationID,
 				Method:       Method(method),
 				Path:         path,
-				Params:       convertParams(pathItem.Parameters, op.Parameters),
+				Params:       convertParams(pathItem.Parameters, op.Parameters, memo),
 				Bodies:       requestBodies,
 				BodyRequired: required,
-				Responses:    convertResponses(op.Responses),
+				Responses:    convertResponses(op.Responses, memo),
 			}
 
 			contract.Operations = append(contract.Operations, operation)
@@ -50,32 +55,33 @@ func ParseOpenAPI(ctx context.Context, fileLocation *string) (*Contract, error) 
 }
 
 // convertContent converts a media type map into schemas. A media type declared
-// without a schema is kept with a nil value. The result is never nil.
-func convertContent(content openapi3.Content) map[string]*Schema {
+// without a schema is kept with a nil value. The result is never nil. memo is
+// the conversion memo shared by the caller, see convertSchema.
+func convertContent(content openapi3.Content, memo map[*openapi3.Schema]*Schema) map[string]*Schema {
 	bodies := make(map[string]*Schema, len(content))
 	for mediaType, mt := range content {
 		var schema *Schema
 		if mt != nil && mt.Schema != nil {
-			schema = convertSchema(mt.Schema.Value, nil)
+			schema = convertSchema(mt.Schema.Value, memo)
 		}
 		bodies[mediaType] = schema
 	}
 	return bodies
 }
 
-func convertBody(body *openapi3.RequestBodyRef) (map[string]*Schema, bool) {
+func convertBody(body *openapi3.RequestBodyRef, memo map[*openapi3.Schema]*Schema) (map[string]*Schema, bool) {
 	if body == nil || body.Value == nil {
 		return nil, false
 	}
 
-	return convertContent(body.Value.Content), body.Value.Required
+	return convertContent(body.Value.Content, memo), body.Value.Required
 }
 
 // convertParams merges the parameters shared by every operation of a path
 // with the operation's own. A parameter is identified by its location and
 // name, and the operation's version replaces the path's, as the OpenAPI spec
 // requires. The order of first appearance is kept so the result is stable.
-func convertParams(pathParams, opParams openapi3.Parameters) []Param {
+func convertParams(pathParams, opParams openapi3.Parameters, memo map[*openapi3.Schema]*Schema) []Param {
 	type key struct {
 		in   ParamIn
 		name string
@@ -98,13 +104,13 @@ func convertParams(pathParams, opParams openapi3.Parameters) []Param {
 
 		switch {
 		case p.Schema != nil:
-			param.Schema = convertSchema(p.Schema.Value, nil)
+			param.Schema = convertSchema(p.Schema.Value, memo)
 		case len(p.Content) > 0:
 			// The spec requires exactly one entry in a parameter's content,
 			// so this loop runs once.
 			for _, mt := range p.Content {
 				if mt != nil && mt.Schema != nil {
-					param.Schema = convertSchema(mt.Schema.Value, nil)
+					param.Schema = convertSchema(mt.Schema.Value, memo)
 				}
 			}
 		}
@@ -190,6 +196,10 @@ func convertSchema(s *openapi3.Schema, memo map[*openapi3.Schema]*Schema) *Schem
 
 	// allOf means the value satisfies every sub-schema, so merging their
 	// properties and required names is a faithful translation.
+	//
+	// Known limit: if a sub-schema refers back to an ancestor still being
+	// built (a cycle through allOf), sub is incomplete when it is merged here,
+	// so the merge copies only what exists so far.
 	for _, ref := range s.AllOf {
 		if ref == nil {
 			continue
@@ -222,8 +232,9 @@ func convertSchema(s *openapi3.Schema, memo map[*openapi3.Schema]*Schema) *Schem
 }
 
 // convertAlternatives converts the sub-schemas of a oneOf or anyOf. Entries
-// that cannot be converted (nil, or cut off as a cycle) are skipped, and the
-// result is nil when there is nothing left.
+// that cannot be converted (a nil ref or a ref without a value) are skipped,
+// and the result is nil when there is nothing left. An alternative that refers
+// back to an ancestor is kept, as a pointer to that ancestor.
 func convertAlternatives(refs openapi3.SchemaRefs, memo map[*openapi3.Schema]*Schema) []*Schema {
 	var alts []*Schema
 	for _, ref := range refs {
@@ -240,7 +251,7 @@ func convertAlternatives(refs openapi3.SchemaRefs, memo map[*openapi3.Schema]*Sc
 // convertResponses converts the responses of an operation, keyed by status
 // exactly as written in the document. A response without content is kept with
 // empty Bodies; a nil ref or a ref without a value is skipped.
-func convertResponses(r *openapi3.Responses) map[string]*Response {
+func convertResponses(r *openapi3.Responses, memo map[*openapi3.Schema]*Schema) map[string]*Response {
 	if r == nil {
 		return nil
 	}
@@ -250,7 +261,7 @@ func convertResponses(r *openapi3.Responses) map[string]*Response {
 		if ref == nil || ref.Value == nil {
 			continue
 		}
-		responses[status] = &Response{Bodies: convertContent(ref.Value.Content)}
+		responses[status] = &Response{Bodies: convertContent(ref.Value.Content, memo)}
 	}
 	return responses
 }

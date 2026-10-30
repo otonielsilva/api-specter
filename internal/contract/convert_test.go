@@ -234,7 +234,7 @@ func TestConvertParams(t *testing.T) {
 		got := convertParams(nil, openapi3.Parameters{
 			{Value: openapi3.NewQueryParameter("limit").WithRequired(true).WithSchema(openapi3.NewIntegerSchema())},
 			{Value: openapi3.NewHeaderParameter("X-Request-Id").WithSchema(openapi3.NewStringSchema().WithFormat("uuid"))},
-		})
+		}, nil)
 		if len(got) != 2 {
 			t.Fatalf("len = %d, want 2", len(got))
 		}
@@ -250,7 +250,7 @@ func TestConvertParams(t *testing.T) {
 		pathLevel := openapi3.Parameters{{Value: openapi3.NewQueryParameter("q").WithSchema(openapi3.NewStringSchema())}}
 		opLevel := openapi3.Parameters{{Value: openapi3.NewQueryParameter("q").WithRequired(true).WithSchema(openapi3.NewStringSchema().WithMaxLength(5))}}
 
-		got := convertParams(pathLevel, opLevel)
+		got := convertParams(pathLevel, opLevel, nil)
 		if len(got) != 1 {
 			t.Fatalf("len = %d, want 1", len(got))
 		}
@@ -263,7 +263,7 @@ func TestConvertParams(t *testing.T) {
 		got := convertParams(nil, openapi3.Parameters{
 			{Value: openapi3.NewQueryParameter("id")},
 			{Value: openapi3.NewHeaderParameter("id")},
-		})
+		}, nil)
 		if len(got) != 2 {
 			t.Errorf("len = %d, want 2", len(got))
 		}
@@ -272,7 +272,7 @@ func TestConvertParams(t *testing.T) {
 	t.Run("does not modify the caller's slices", func(t *testing.T) {
 		pathLevel := openapi3.Parameters{{Value: openapi3.NewPathParameter("id")}}
 		opLevel := openapi3.Parameters{{Value: openapi3.NewQueryParameter("q")}}
-		convertParams(pathLevel, opLevel)
+		convertParams(pathLevel, opLevel, nil)
 		if len(pathLevel) != 1 || len(opLevel) != 1 {
 			t.Errorf("inputs changed: %d, %d", len(pathLevel), len(opLevel))
 		}
@@ -287,7 +287,7 @@ func TestConvertParams(t *testing.T) {
 					WithProperty("tag", openapi3.NewStringSchema()).NewRef(),
 			},
 		}
-		got := convertParams(nil, openapi3.Parameters{{Value: p}})
+		got := convertParams(nil, openapi3.Parameters{{Value: p}}, nil)
 		if len(got) != 1 || got[0].Schema == nil || got[0].Schema.Type != SchemaTypeObject {
 			t.Fatalf("got %+v, want object schema from content", got)
 		}
@@ -297,7 +297,7 @@ func TestConvertParams(t *testing.T) {
 	})
 
 	t.Run("nil refs are skipped", func(t *testing.T) {
-		got := convertParams(nil, openapi3.Parameters{nil, {Value: nil}, {Value: openapi3.NewQueryParameter("q")}})
+		got := convertParams(nil, openapi3.Parameters{nil, {Value: nil}, {Value: openapi3.NewQueryParameter("q")}}, nil)
 		if len(got) != 1 || got[0].Name != "q" {
 			t.Errorf("got %+v, want only q", got)
 		}
@@ -456,7 +456,7 @@ func TestConvertBody(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			body, converted := convertBody(tt.input)
+			body, converted := convertBody(tt.input, nil)
 			if converted != tt.required {
 				t.Errorf("required = %v, want %v", converted, tt.required)
 			}
@@ -544,7 +544,7 @@ func TestConvertResponses(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := convertResponses(tt.input)
+			got := convertResponses(tt.input, nil)
 			// DeepEqual tells nil from empty maps, which matters for both the
 			// outer map and each Bodies.
 			if !reflect.DeepEqual(got, tt.want) {

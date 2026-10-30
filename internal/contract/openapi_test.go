@@ -48,7 +48,8 @@ func TestParseOpenAPIMergesPathAndOperationParams(t *testing.T) {
 }
 
 // The tests below use testdata/petstore.yaml. Operations come out of
-// ParseOpenAPI in random order, so look them up by ID with a helper:
+// ParseOpenAPI sorted by path and method, but tests should not depend on the
+// position, so look them up by ID with a helper:
 func findOp(t *testing.T, c *Contract, id string) Operation {
 	t.Helper()
 	for _, op := range c.Operations {
@@ -246,5 +247,25 @@ func TestParseOpenAPIRecursiveSchemaSharesPointer(t *testing.T) {
 	}
 	if got := supplier.Properties["main_product"]; got != ing {
 		t.Errorf("origin.main_product = %p, want %p (Ingredient)", got, ing)
+	}
+}
+
+// One memo covers the whole document, so the Ingredient of the request body
+// and the one of the 201 response are the same *Schema.
+func TestParseOpenAPISharesSchemaAcrossRequestAndResponse(t *testing.T) {
+	spec := "testdata/cycle.yaml"
+	c, err := ParseOpenAPI(context.Background(), &spec)
+	if err != nil {
+		t.Fatalf("ParseOpenAPI: %v", err)
+	}
+
+	op := findOp(t, c, "createIngredient")
+	req := op.Bodies["application/json"]
+	resp := op.Responses["201"].Bodies["application/json"]
+	if req == nil || resp == nil {
+		t.Fatalf("request = %p, response = %p, want both set", req, resp)
+	}
+	if req != resp {
+		t.Errorf("request = %p, response = %p, want the same pointer", req, resp)
 	}
 }

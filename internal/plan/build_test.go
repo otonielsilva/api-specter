@@ -230,6 +230,9 @@ func TestInferProducerFrom(t *testing.T) {
 		}
 	}
 
+	bothStatuses := post("200", "id")
+	bothStatuses.Responses["201"] = post("201", "animalId").Responses["201"]
+
 	tests := []struct {
 		name      string
 		producer  contract.Operation
@@ -237,9 +240,12 @@ func TestInferProducerFrom(t *testing.T) {
 		wantFrom  string
 		wantMatch Match
 	}{
-		{"param name wins over id", post("201", "id", "petId"), "petId", "response.body.petId", MatchParam},
+		{"id wins over param name", post("201", "id", "petId"), "petId", "response.body.id", MatchID},
 		{"param name ignores case and underscore", post("201", "pet_id"), "petId", "response.body.pet_id", MatchParam},
-		{"collection id wins over id", post("201", "id", "animalId"), "id", "response.body.animalId", MatchCollection},
+		{"collection id wins over param name", post("201", "animalId", "petId"), "petId", "response.body.animalId", MatchCollection},
+		{"201 wins over 200", bothStatuses, "id", "response.body.animalId", MatchCollection},
+		{"200 is read when there is no 201", post("200", "id"), "id", "response.body.id", MatchID},
+		{"2XX is read last", post("2XX", "id"), "id", "response.body.id", MatchID},
 		{"collection id with underscore", post("201", "animal_id"), "id", "response.body.animal_id", MatchCollection},
 		{"plain id", post("201", "id", "name"), "id", "response.body.id", MatchID},
 		{"no match falls back to default", post("201", "name"), "id", defaultFrom, Unresolved},
@@ -253,5 +259,100 @@ func TestInferProducerFrom(t *testing.T) {
 				t.Errorf("got (%q, %q), want (%q, %q)", from, match, tt.wantFrom, tt.wantMatch)
 			}
 		})
+	}
+}
+
+func TestBuildBodyFieldRequiresProducerOfReferencedCollection(t *testing.T) {
+	body := func(fields ...string) map[string]*contract.Schema {
+		props := make(map[string]*contract.Schema, len(fields))
+		for _, f := range fields {
+			props[f] = &contract.Schema{Type: contract.SchemaTypeString}
+		}
+		return map[string]*contract.Schema{"application/json": {Type: contract.SchemaTypeObject, Properties: props}}
+	}
+	post := func(path string, fields ...string) contract.Operation {
+		return contract.Operation{Method: contract.POST, Path: path, Bodies: body(fields...)}
+	}
+	ref := func(field, producer string) Requirement {
+		return Requirement{Param: field, In: Body, Producers: []Producer{{Op: producer, From: "response.body.id", Match: Unresolved}}}
+	}
+
+	tests := []struct {
+		name string
+		ops  []contract.Operation
+		want []Requirement
+	}{
+		{"Id suffix, plural s", []contract.Operation{post("/feeds"), post("/toys", "feedId")}, []Requirement{ref("feedId", "POST /feeds")}},
+		{"ID suffix", []contract.Operation{post("/feeds"), post("/toys", "feedID")}, []Requirement{ref("feedID", "POST /feeds")}},
+		{"_id suffix", []contract.Operation{post("/feeds"), post("/toys", "feed_id")}, []Requirement{ref("feed_id", "POST /feeds")}},
+		{"y to ies", []contract.Operation{post("/categories"), post("/toys", "categoryId")}, []Requirement{ref("categoryId", "POST /categories")}},
+		{"es plural", []contract.Operation{post("/boxes"), post("/toys", "boxId")}, []Requirement{ref("boxId", "POST /boxes")}},
+		{"nested collection by last segment", []contract.Operation{post("/animals/{id}/feedings"), post("/toys", "feedingId")}, []Requirement{ref("feedingId", "POST /animals/{id}/feedings")}},
+		{"no candidate", []contract.Operation{post("/toys", "abobrinhaId")}, nil},
+		{"bare id is ignored", []contract.Operation{post("/ids"), post("/toys", "id")}, nil},
+		{"never itself", []contract.Operation{post("/toys", "toyId")}, nil},
+		{"ambiguous is skipped", []contract.Operation{post("/feeds"), post("/a/feeds"), post("/toys", "feedId")}, nil},
+		{
+			"fields in name order",
+			[]contract.Operation{post("/feeds"), post("/vets"), post("/toys", "vetId", "feedId")},
+			[]Requirement{ref("feedId", "POST /feeds"), ref("vetId", "POST /vets")},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := Build(&contract.Contract{Operations: tt.ops}, "api.yaml", nil)
+
+			got := p.Operations[tt.ops[len(tt.ops)-1].BuildID()].Requires
+			if len(tt.want) == 0 && len(got) == 0 {
+				return
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("Requires = %#v, want %#v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestBuildBodyFieldAlreadyRequiredByPathIsSkipped(t *testing.T) {
+	c := &contract.Contract{Operations: []contract.Operation{
+		{Method: contract.POST, Path: "/feeds"},
+		{Method: contract.POST, Path: "/feeds/{id}/restock", Bodies: map[string]*contract.Schema{
+			"application/json": {Type: contract.SchemaTypeObject, Properties: map[string]*contract.Schema{"feedId": {Type: contract.SchemaTypeString}}},
+		}},
+	}}
+
+	p := Build(c, "api.yaml", nil)
+
+	got := p.Operations["POST /feeds/{id}/restock"].Requires
+	if len(got) != 1 || got[0].In != Path {
+		t.Errorf("Requires = %#v, want only the path requirement", got)
+	}
+}
+
+func TestBuildPostEndingInParamIsNotAProducer(t *testing.T) {
+	// POST /animals/{id} acts on one animal, it does not create a collection,
+	// so it cannot produce {sub}. Neither /animals nor /animals/{id} has a
+	// collection POST, so both params are seeds.
+	c := &contract.Contract{Operations: []contract.Operation{
+		{Method: contract.POST, Path: "/animals/{id}"},
+		{Method: contract.GET, Path: "/animals/{id}/{sub}"},
+	}}
+
+	p := Build(c, "api.yaml", nil)
+
+	op, ok := p.Operations["GET /animals/{id}/{sub}"]
+	if !ok {
+		t.Fatal(`missing operation "GET /animals/{id}/{sub}"`)
+	}
+	if len(op.Requires) != 0 {
+		t.Errorf("Requires = %#v, want none", op.Requires)
+	}
+	want := []SeedNeed{
+		{Op: "POST /animals/{id}", Param: "id", In: Path},
+		{Op: "GET /animals/{id}/{sub}", Param: "id", In: Path},
+		{Op: "GET /animals/{id}/{sub}", Param: "sub", In: Path},
+	}
+	if !reflect.DeepEqual(p.SeedsNeeded, want) {
+		t.Errorf("SeedsNeeded = %#v, want %#v", p.SeedsNeeded, want)
 	}
 }

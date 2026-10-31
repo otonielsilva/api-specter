@@ -357,6 +357,43 @@ Almost everything needs a token, so `--auth` has to work early.
   `id` in the response, and `xxxId` fields in the body → collection
   `xxx`. No OpenAPI links, no nested hierarchy, no groups.
 
+### Minimal heuristic rules
+
+The producer is always a `POST` and the value is read from
+`response.body.id`. An operation never depends on itself. Every output is
+ordered by the contract (operations) or by name (body fields), never by map
+iteration, so the plan is the same on every run.
+
+**Path rule.** Each `{x}` segment belongs to the collection made of the
+segments before it: in `/animals/{id}/feedings` the collection of `{id}` is
+`/animals`. If a `POST` exists on exactly that path, the operation gets
+`Requirement{param: x, in: path}` with that `POST` as producer. If not, the
+parameter goes to `seeds_needed`. Every `{x}` of a path is evaluated on its
+own, left to right, whatever the method of the operation. The producer path
+is always shorter than the consumer path, so this rule alone never creates a
+cycle.
+
+**Body rule** (best effort). Applies to the top-level properties of the
+request body, in every media type, visited in name order.
+
+1. A property is an id reference when its name ends in `Id`, `ID` or `_id`
+   and something is left once the suffix is cut. A bare `id` is the
+   resource's own id and is ignored.
+2. The candidates are the collections with a `POST` whose last segment
+   matches the stem, ignoring case, as is, with `s` or `es` added, or with
+   `y` turned into `ies` (`feedId` → `/feeds`, `categoryId` →
+   `/categories`).
+3. Only a single candidate counts. With several, the rule stays silent
+   instead of guessing.
+4. The candidate may not be the operation itself.
+5. If the same producer is already required by a path parameter, no second
+   requirement is added.
+6. The requirement is `{param: <field name>, in: body}`.
+
+Names that do not follow these patterns are not guessed. They are left to
+the LLM generator or to whoever edits the plan, and the result is checked
+by `Sort` and `Validate` like any other plan.
+
 **Out**
 The `plan validate` and `plan reorder` commands, the `empty` generator,
 JSON Schema, `--include/--exclude` filters, profiles, concurrency,

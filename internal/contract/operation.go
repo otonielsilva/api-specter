@@ -159,3 +159,9 @@ type Param struct {
 	Required bool
 	Schema   *Schema
 }
+
+// BuildID returns the id of the operation, "METHOD /path", which is also its
+// key in a plan.
+func (op *Operation) BuildID() string {
+	return string(op.Method) + " " + op.Path
+}

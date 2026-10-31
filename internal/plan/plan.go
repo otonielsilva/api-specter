@@ -10,6 +10,11 @@ const (
 	QueryParam Location = "query"
 	Header     Location = "header"
 	Body       Location = "body"
+
+	MatchParam      Match = "param"
+	MatchCollection Match = "collection"
+	MatchID         Match = "id"
+	Unresolved      Match = "unresolved"
 )
 
 // Generator names who produced a plan, for auditing only. It is free text
@@ -18,6 +23,11 @@ type Generator string
 
 // Location says where a parameter goes in a request.
 type Location string
+
+// Match says which rule found the value of a Producer, so a reader of the plan
+// knows how far to trust it. Unresolved means nothing matched and From is a
+// guess that needs review.
+type Match string
 
 // Plan is the file that "specter plan" writes and "specter run" reads. It
 // holds the dependencies between operations and the order to run them in.
@@ -50,10 +60,12 @@ type Operator struct {
 }
 
 // Producer is an operation that can supply a value, and where to find the
-// value in its response (for example "response.body.id").
+// value in its response (for example "response.body.id"). Match records how
+// From was chosen.
 type Producer struct {
-	Op   string `json:"op"`
-	From string `json:"from"`
+	Op    string `json:"op"`
+	From  string `json:"from"`
+	Match Match  `json:"match"`
 }
 
 // Requirement is a parameter an operation needs and the operations that can

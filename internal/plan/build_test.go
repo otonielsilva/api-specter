@@ -89,7 +89,7 @@ func TestBuildPathParamWithPostOnCollectionRequiresProducer(t *testing.T) {
 	want := []Requirement{{
 		Param:     "id",
 		In:        Path,
-		Producers: []Producer{{Op: "POST /animal", From: "response.body.id"}},
+		Producers: []Producer{{Op: "POST /animal", From: "response.body.id", Match: Unresolved}},
 	}}
 	if !reflect.DeepEqual(op.Requires, want) {
 		t.Errorf("Requires = %#v, want %#v", op.Requires, want)
@@ -169,12 +169,12 @@ func TestBuildTwoPathParamsRequireOneProducerEach(t *testing.T) {
 		{
 			Param:     "ownerId",
 			In:        Path,
-			Producers: []Producer{{Op: "POST /owner", From: "response.body.id"}},
+			Producers: []Producer{{Op: "POST /owner", From: "response.body.id", Match: Unresolved}},
 		},
 		{
 			Param:     "petId",
 			In:        Path,
-			Producers: []Producer{{Op: "POST /owner/{ownerId}/pet", From: "response.body.id"}},
+			Producers: []Producer{{Op: "POST /owner/{ownerId}/pet", From: "response.body.id", Match: Unresolved}},
 		},
 	}
 	if !reflect.DeepEqual(op.Requires, want) {
@@ -202,7 +202,7 @@ func TestBuildMixedPathParamsSplitBetweenRequiresAndSeeds(t *testing.T) {
 	wantRequires := []Requirement{{
 		Param:     "ownerId",
 		In:        Path,
-		Producers: []Producer{{Op: "POST /owner", From: "response.body.id"}},
+		Producers: []Producer{{Op: "POST /owner", From: "response.body.id", Match: Unresolved}},
 	}}
 	if !reflect.DeepEqual(op.Requires, wantRequires) {
 		t.Errorf("Requires = %#v, want %#v", op.Requires, wantRequires)
@@ -212,5 +212,46 @@ func TestBuildMixedPathParamsSplitBetweenRequiresAndSeeds(t *testing.T) {
 	}
 	if !reflect.DeepEqual(p.SeedsNeeded, wantSeeds) {
 		t.Errorf("SeedsNeeded = %#v, want %#v", p.SeedsNeeded, wantSeeds)
+	}
+}
+
+func TestInferProducerFrom(t *testing.T) {
+	post := func(status string, props ...string) contract.Operation {
+		properties := make(map[string]*contract.Schema, len(props))
+		for _, name := range props {
+			properties[name] = &contract.Schema{Type: contract.SchemaTypeString}
+		}
+		return contract.Operation{
+			Method: contract.POST,
+			Path:   "/animals",
+			Responses: map[string]*contract.Response{status: {Bodies: map[string]*contract.Schema{
+				"application/json": {Type: contract.SchemaTypeObject, Properties: properties},
+			}}},
+		}
+	}
+
+	tests := []struct {
+		name      string
+		producer  contract.Operation
+		param     string
+		wantFrom  string
+		wantMatch Match
+	}{
+		{"param name wins over id", post("201", "id", "petId"), "petId", "response.body.petId", MatchParam},
+		{"param name ignores case and underscore", post("201", "pet_id"), "petId", "response.body.pet_id", MatchParam},
+		{"collection id wins over id", post("201", "id", "animalId"), "id", "response.body.animalId", MatchCollection},
+		{"collection id with underscore", post("201", "animal_id"), "id", "response.body.animal_id", MatchCollection},
+		{"plain id", post("201", "id", "name"), "id", "response.body.id", MatchID},
+		{"no match falls back to default", post("201", "name"), "id", defaultFrom, Unresolved},
+		{"no responses falls back to default", contract.Operation{Path: "/animals"}, "id", defaultFrom, Unresolved},
+		{"non 2xx response is ignored", post("400", "id"), "id", defaultFrom, Unresolved},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			from, match := inferProducerFrom(tt.producer, tt.param)
+			if from != tt.wantFrom || match != tt.wantMatch {
+				t.Errorf("got (%q, %q), want (%q, %q)", from, match, tt.wantFrom, tt.wantMatch)
+			}
+		})
 	}
 }

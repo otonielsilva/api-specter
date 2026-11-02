@@ -1,8 +1,10 @@
 package plan
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"os"
 	"reflect"
 	"slices"
 	"testing"
@@ -354,5 +356,50 @@ func TestBuildPostEndingInParamIsNotAProducer(t *testing.T) {
 	}
 	if !reflect.DeepEqual(p.SeedsNeeded, want) {
 		t.Errorf("SeedsNeeded = %#v, want %#v", p.SeedsNeeded, want)
+	}
+}
+
+// TestBuildZooMatchesGoldenRequires checks that Build, run on the zoo spec,
+// derives the same dependencies as the golden plan. If a rule changes, the
+// golden has to change with it, on purpose.
+func TestBuildZooMatchesGoldenRequires(t *testing.T) {
+	const specPath = "../zoo/openapi.yaml"
+	c, err := contract.ParseOpenAPI(context.Background(), specPath)
+	if err != nil {
+		t.Fatalf("parse zoo spec: %v", err)
+	}
+	// The same file as the contract, so Spec.Hash is the one of the real spec.
+	spec, err := os.ReadFile(specPath)
+	if err != nil {
+		t.Fatalf("read zoo spec: %v", err)
+	}
+
+	got := Build(c, specPath, spec)
+	want := loadZoo(t)
+
+	// The loop below only visits what the golden has, so an extra operation in
+	// got would pass unseen without this check.
+	if len(got.Operations) != len(want.Operations) {
+		t.Errorf("len(Operations) = %d, want %d", len(got.Operations), len(want.Operations))
+	}
+	// Only Requires and SeedsNeeded are compared: Order waits for Sort, the
+	// golden Tags are not generated yet, and Spec/Generator are hand-written.
+	for id, wantOp := range want.Operations {
+		gotOp, ok := got.Operations[id]
+		if !ok {
+			t.Errorf("missing operation %q", id)
+			// Skip to the next operation, so every divergence is reported.
+			continue
+		}
+		// DeepEqual, not ==: Requirement holds slices. It also tells nil from
+		// an empty slice, which is why both sides go through fillEmpty.
+		// Requires covers the path edges, the feedId body edge and each Match.
+		if !reflect.DeepEqual(gotOp.Requires, wantOp.Requires) {
+			t.Errorf("%s: Requires = %#v, want %#v", id, gotOp.Requires, wantOp.Requires)
+		}
+	}
+	// Whole-plan field, so it stays outside the loop. The zoo has no seeds.
+	if !reflect.DeepEqual(got.SeedsNeeded, want.SeedsNeeded) {
+		t.Errorf("SeedsNeeded = %#v, want %#v", got.SeedsNeeded, want.SeedsNeeded)
 	}
 }

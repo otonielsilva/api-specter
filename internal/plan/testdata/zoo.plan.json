@@ -28,7 +28,7 @@
       "tags": ["animals", "destructive"],
       "requires": [
         { "param": "id", "in": "path",
-          "producers": [{ "op": "POST /animals", "from": "response.body.id" }] }
+          "producers": [{ "op": "POST /animals", "from": "response.body.id", "match": "id" }] }
       ]
     },
     "DELETE /feeds/{id}": {
@@ -36,7 +36,7 @@
       "tags": ["feeds", "destructive"],
       "requires": [
         { "param": "id", "in": "path",
-          "producers": [{ "op": "POST /feeds", "from": "response.body.id" }] }
+          "producers": [{ "op": "POST /feeds", "from": "response.body.id", "match": "id" }] }
       ]
     },
     "GET /animals": { "enabled": true, "tags": ["animals"], "requires": [] },
@@ -45,7 +45,7 @@
       "tags": ["animals"],
       "requires": [
         { "param": "id", "in": "path",
-          "producers": [{ "op": "POST /animals", "from": "response.body.id" }] }
+          "producers": [{ "op": "POST /animals", "from": "response.body.id", "match": "id" }] }
       ]
     },
     "GET /animals/{id}/feedings": {
@@ -53,7 +53,7 @@
       "tags": ["feedings"],
       "requires": [
         { "param": "id", "in": "path",
-          "producers": [{ "op": "POST /animals", "from": "response.body.id" }] }
+          "producers": [{ "op": "POST /animals", "from": "response.body.id", "match": "id" }] }
       ]
     },
     "GET /feeds": { "enabled": true, "tags": ["feeds"], "requires": [] },
@@ -62,7 +62,7 @@
       "tags": ["feeds"],
       "requires": [
         { "param": "id", "in": "path",
-          "producers": [{ "op": "POST /feeds", "from": "response.body.id" }] }
+          "producers": [{ "op": "POST /feeds", "from": "response.body.id", "match": "id" }] }
       ]
     },
     "GET /healthz": { "enabled": true, "tags": ["health"], "requires": [] },
@@ -71,7 +71,7 @@
       "tags": ["animals"],
       "requires": [
         { "param": "id", "in": "path",
-          "producers": [{ "op": "POST /animals", "from": "response.body.id" }] }
+          "producers": [{ "op": "POST /animals", "from": "response.body.id", "match": "id" }] }
       ]
     },
     "POST /animals": { "enabled": true, "tags": ["animals"], "requires": [] },
@@ -80,9 +80,9 @@
       "tags": ["feedings"],
       "requires": [
         { "param": "id", "in": "path",
-          "producers": [{ "op": "POST /animals", "from": "response.body.id" }] },
+          "producers": [{ "op": "POST /animals", "from": "response.body.id", "match": "id" }] },
         { "param": "feedId", "in": "body",
-          "producers": [{ "op": "POST /feeds", "from": "response.body.id" }] }
+          "producers": [{ "op": "POST /feeds", "from": "response.body.id", "match": "id" }] }
       ]
     },
     "POST /feeds": { "enabled": true, "tags": ["feeds"], "requires": [] },
@@ -91,7 +91,7 @@
       "tags": ["feeds"],
       "requires": [
         { "param": "id", "in": "path",
-          "producers": [{ "op": "POST /feeds", "from": "response.body.id" }] }
+          "producers": [{ "op": "POST /feeds", "from": "response.body.id", "match": "id" }] }
       ]
     },
     "PUT /animals/{id}": {
@@ -99,7 +99,7 @@
       "tags": ["animals"],
       "requires": [
         { "param": "id", "in": "path",
-          "producers": [{ "op": "POST /animals", "from": "response.body.id" }] }
+          "producers": [{ "op": "POST /animals", "from": "response.body.id", "match": "id" }] }
       ]
     },
     "PUT /feeds/{id}": {
@@ -107,7 +107,7 @@
       "tags": ["feeds"],
       "requires": [
         { "param": "id", "in": "path",
-          "producers": [{ "op": "POST /feeds", "from": "response.body.id" }] }
+          "producers": [{ "op": "POST /feeds", "from": "response.body.id", "match": "id" }] }
       ]
     }
   },

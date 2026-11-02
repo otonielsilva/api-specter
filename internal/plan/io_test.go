@@ -8,16 +8,7 @@ import (
 )
 
 func TestLoadZooPlan(t *testing.T) {
-	f, err := os.Open("testdata/zoo.plan.json")
-	if err != nil {
-		t.Fatalf("open testdata: %v", err)
-	}
-	defer f.Close()
-
-	p, err := Load(f)
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
+	p := loadZoo(t)
 
 	if p.Generator != "heuristic/0.1" {
 		t.Errorf("Generator = %q, want %q", p.Generator, "heuristic/0.1")
@@ -43,6 +34,25 @@ func TestLoadZooPlan(t *testing.T) {
 			t.Errorf("Order has %q, which is not in Operations", id)
 		}
 	}
+}
+
+// loadZoo loads the golden zoo plan from testdata and fails the test if it
+// cannot. The golden is the expected output of Build for internal/zoo.
+func loadZoo(t *testing.T) *Plan {
+	// Failures are reported at the line of the test that called loadZoo.
+	t.Helper()
+	file, err := os.Open("testdata/zoo.plan.json")
+	if err != nil {
+		t.Fatalf("open testdata: %v", err)
+	}
+	// After the error check: on failure file is nil and has nothing to close.
+	defer file.Close()
+
+	plan, err := Load(file)
+	if err != nil {
+		t.Fatalf("load testdata: %v", err)
+	}
+	return plan
 }
 
 func TestLoadRejects(t *testing.T) {

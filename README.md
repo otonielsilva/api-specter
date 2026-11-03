@@ -51,7 +51,9 @@ starting from the contract the API already publishes.
 cmd/specter/        CLI entry point
 cmd/zoo/            benchmark target server
 internal/cli/       subcommands and flags
+internal/config/    settings from the environment and .env
 internal/contract/  OpenAPI → internal model
+internal/plan/      plan file: dependencies between operations
 internal/generator/ input generation
 internal/executor/  HTTP, concurrency, scope guard
 internal/oracle/    failure detection

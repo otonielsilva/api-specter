@@ -1,6 +1,9 @@
 package plan
 
-import "testing"
+import (
+	"slices"
+	"testing"
+)
 
 // These tests cover Sort (see docs/design/plan-and-run.md, sections 4 and 8).
 // Sort has no code yet, so the bodies are comments: uncomment the call and
@@ -21,19 +24,46 @@ import "testing"
 
 // Step 1: ordering a graph with no cycle.
 
+// zooOrder is the order of the zoo plan, the table in docs/design/zoo-graph.md:
+// Kahn's algorithm with the (is DELETE, id) tie-break.
+// var zooOrder = []string{
+//	"GET /animals",
+//	"GET /feeds",
+//	"GET /healthz",
+//	"POST /animals",
+//	"GET /animals/{id}",
+//	"GET /animals/{id}/feedings",
+//	"PATCH /animals/{id}",
+//	"POST /feeds",
+//	"GET /feeds/{id}",
+//	"POST /animals/{id}/feedings",
+//	"POST /feeds/{id}/restock",
+//	"PUT /animals/{id}",
+//	"PUT /feeds/{id}",
+//	"DELETE /animals/{id}",
+//	"DELETE /feeds/{id}",
+// }
+
 func TestSortZooMatchesGoldenOrder(t *testing.T) {
-	t.Skip("TODO: write me")
-	// Build the zoo graph by hand (11 edges, table in docs/design/zoo-graph.md):
-	//   POST /animals -> GET, PUT, PATCH, DELETE /animals/{id},
-	//                    GET and POST /animals/{id}/feedings   (id, path)
-	//   POST /feeds   -> GET, PUT, DELETE /feeds/{id},
-	//                    POST /feeds/{id}/restock              (id, path)
-	//   POST /feeds   -> POST /animals/{id}/feedings           (feedId, body)
-	// Plus the 3 operations with no dependency: GET /healthz, GET /animals,
-	// GET /feeds. 15 operations in total.
-	// Expect exactly the 15-line order of the table, no cycles, nil error.
-	// Alternative: load testdata/zoo.plan.json and compare Sort(p.Operations)
-	// with p.Order, so the fixture is not written twice.
+	t.Skip("TODO: enable once Sort is implemented")
+	// p := loadZoo(t)
+	//
+	// // Guard: the golden file and the table must agree, so a change to one
+	// // without the other fails here and not as a confusing Sort failure.
+	// if !slices.Equal(p.Order, zooOrder) {
+	//	t.Fatalf("golden order differs from zooOrder:\n got: %q\nwant: %q", p.Order, zooOrder)
+	// }
+	//
+	// order, cycles, err := Sort(p.Operations)
+	// if err != nil {
+	//	t.Fatalf("Sort: unexpected error: %v", err)
+	// }
+	// if len(cycles) != 0 {
+	//	t.Errorf("Sort: got cycles %+v, want none", cycles)
+	// }
+	// if !slices.Equal(order, zooOrder) {
+	//	t.Errorf("Sort order:\n got: %q\nwant: %q", order, zooOrder)
+	// }
 }
 
 func TestSortDeleteComesLast(t *testing.T) {
@@ -118,4 +148,180 @@ func TestBuildOrderPutsDeleteLast(t *testing.T) {
 	// still empty (no heuristic yet), so Order is just (is DELETE, id):
 	// GET /pets, POST /pets, DELETE /pets. Replaces the "only the set is
 	// checked" comment in TestBuild.
+}
+
+// BuildGraph: edges and pending counts.
+
+// wantNode is the expected state of one node. Dependents are compared sorted
+// because BuildGraph appends them in map iteration order, which is random.
+type wantNode struct {
+	dependents []string
+	pending    int
+}
+
+// graph builds an operations map from deps, where deps["B"] = {"A"} means B
+// requires a value produced by A. Each producer goes in its own Requirement.
+func graph(deps map[string][]string) map[string]Operator {
+	ops := make(map[string]Operator, len(deps))
+	for id, producers := range deps {
+		var reqs []Requirement
+		for _, p := range producers {
+			reqs = append(reqs, Requirement{
+				Param:     "id",
+				In:        Path,
+				Producers: []Producer{{Op: p}},
+			})
+		}
+		ops[id] = Operator{Enabled: true, Requires: reqs}
+	}
+	return ops
+}
+
+// checkGraph compares got with want node by node, ignoring dependents order.
+func checkGraph(t *testing.T, got map[string]*Node, want map[string]wantNode) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Errorf("got %d nodes, want %d", len(got), len(want))
+	}
+	for id, w := range want {
+		n, ok := got[id]
+		if !ok {
+			t.Errorf("node %q missing", id)
+			continue
+		}
+		deps := slices.Sorted(slices.Values(n.dependents))
+		wantDeps := slices.Sorted(slices.Values(w.dependents))
+		if !slices.Equal(deps, wantDeps) {
+			t.Errorf("node %q dependents:\n got: %q\nwant: %q", id, deps, wantDeps)
+		}
+		if n.pending != w.pending {
+			t.Errorf("node %q pending = %d, want %d", id, n.pending, w.pending)
+		}
+	}
+}
+
+func TestBuildGraphZooMatchesGolden(t *testing.T) {
+	p := loadZoo(t)
+
+	// The 11 edges of docs/design/zoo-graph.md. Only the two POSTs on a
+	// collection produce values; POST /animals/{id}/feedings waits for both.
+	want := map[string]wantNode{
+		"POST /animals": {dependents: []string{
+			"GET /animals/{id}",
+			"PUT /animals/{id}",
+			"PATCH /animals/{id}",
+			"DELETE /animals/{id}",
+			"GET /animals/{id}/feedings",
+			"POST /animals/{id}/feedings",
+		}},
+		"POST /feeds": {dependents: []string{
+			"GET /feeds/{id}",
+			"PUT /feeds/{id}",
+			"DELETE /feeds/{id}",
+			"POST /feeds/{id}/restock",
+			"POST /animals/{id}/feedings",
+		}},
+		"GET /healthz":                {},
+		"GET /animals":                {},
+		"GET /feeds":                  {},
+		"GET /animals/{id}":           {pending: 1},
+		"PUT /animals/{id}":           {pending: 1},
+		"PATCH /animals/{id}":         {pending: 1},
+		"DELETE /animals/{id}":        {pending: 1},
+		"GET /animals/{id}/feedings":  {pending: 1},
+		"POST /animals/{id}/feedings": {pending: 2},
+		"GET /feeds/{id}":             {pending: 1},
+		"PUT /feeds/{id}":             {pending: 1},
+		"DELETE /feeds/{id}":          {pending: 1},
+		"POST /feeds/{id}/restock":    {pending: 1},
+	}
+
+	checkGraph(t, BuildGraph(p.Operations), want)
+}
+
+func TestBuildGraph(t *testing.T) {
+	tests := []struct {
+		name string
+		ops  map[string]Operator
+		want map[string]wantNode
+	}{
+		{
+			name: "nil operations",
+			ops:  nil,
+			want: map[string]wantNode{},
+		},
+		{
+			name: "no dependencies",
+			ops:  graph(map[string][]string{"A": nil, "B": nil}),
+			want: map[string]wantNode{"A": {}, "B": {}},
+		},
+		{
+			name: "one edge",
+			ops:  graph(map[string][]string{"A": nil, "B": {"A"}}),
+			want: map[string]wantNode{
+				"A": {dependents: []string{"B"}},
+				"B": {pending: 1},
+			},
+		},
+		{
+			name: "two producers",
+			ops:  graph(map[string][]string{"A": nil, "B": nil, "C": {"A", "B"}}),
+			want: map[string]wantNode{
+				"A": {dependents: []string{"C"}},
+				"B": {dependents: []string{"C"}},
+				"C": {pending: 2},
+			},
+		},
+		{
+			name: "self-loop is ignored",
+			ops:  graph(map[string][]string{"A": {"A"}}),
+			want: map[string]wantNode{"A": {}},
+		},
+		{
+			// Same producer in two Requirements counts as one edge.
+			name: "duplicate producer across requirements",
+			ops:  graph(map[string][]string{"A": nil, "B": {"A", "A"}}),
+			want: map[string]wantNode{
+				"A": {dependents: []string{"B"}},
+				"B": {pending: 1},
+			},
+		},
+		{
+			// Same producer twice in one Requirement's Producers.
+			name: "duplicate producer in one requirement",
+			ops: map[string]Operator{
+				"A": {},
+				"B": {Requires: []Requirement{{
+					Param:     "id",
+					In:        Path,
+					Producers: []Producer{{Op: "A"}, {Op: "A"}},
+				}}},
+			},
+			want: map[string]wantNode{
+				"A": {dependents: []string{"B"}},
+				"B": {pending: 1},
+			},
+		},
+		{
+			// Logged with slog.Warn and skipped: no node is created for X.
+			name: "producer not in plan is skipped",
+			ops:  graph(map[string][]string{"B": {"X"}}),
+			want: map[string]wantNode{"B": {}},
+		},
+		{
+			// BuildGraph does not detect cycles; both nodes wait for each other.
+			name: "cycle",
+			ops:  graph(map[string][]string{"A": {"B"}, "B": {"A"}}),
+			want: map[string]wantNode{
+				"A": {dependents: []string{"B"}, pending: 1},
+				"B": {dependents: []string{"A"}, pending: 1},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			checkGraph(t, BuildGraph(tt.ops), tt.want)
+		})
+	}
 }

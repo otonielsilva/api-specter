@@ -1,6 +1,10 @@
 package plan
 
-import "log/slog"
+import (
+	"log/slog"
+	"slices"
+	"strings"
+)
 
 // Node is one operation in the dependency graph built by BuildGraph.
 // dependents are the operations that consume a value this one produces;
@@ -18,9 +22,48 @@ type Node struct {
 // and DELETEs come last. Self-loops are ignored. Cycles lists the dependency
 // cycles found and the edge dropped to break each one.
 func Sort(ops map[string]Operator) ([]string, []Cycle, error) {
-	BuildGraph(ops)
-	// TODO: implement
-	return nil, nil, nil
+	graph := BuildGraph(ops)
+
+	ready := []string{}
+	for ops, node := range graph {
+		if node.pending == 0 {
+			ready = append(ready, ops)
+		}
+	}
+
+	order := make([]string, 0, len(graph))
+	for len(ready) > 0 {
+		// Pick the smallest ready operation by (is DELETE, id). Sorting the
+		// whole slice each time is O(n log n) per step, fine for API sizes.
+		slices.SortFunc(ready, compareRunOrder)
+		id := ready[0]
+		ready = ready[1:]
+		order = append(order, id)
+
+		for _, dep := range graph[id].dependents {
+			graph[dep].pending--
+			if graph[dep].pending == 0 {
+				ready = append(ready, dep)
+			}
+		}
+	}
+
+	// TODO: if len(order) < len(graph), the rest is in a cycle.
+	return order, nil, nil
+}
+
+// compareRunOrder orders operation ids by the key (is DELETE, id): every
+// non-DELETE comes before every DELETE, and ties are broken by the id.
+func compareRunOrder(a, b string) int {
+	aDel := strings.HasPrefix(a, "DELETE ")
+	bDel := strings.HasPrefix(b, "DELETE ")
+	if aDel != bDel {
+		if aDel {
+			return 1
+		}
+		return -1
+	}
+	return strings.Compare(a, b)
 }
 
 // BuildGraph returns a Node for every operation in ops, with an edge from

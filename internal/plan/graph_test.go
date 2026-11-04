@@ -26,44 +26,43 @@ import (
 
 // zooOrder is the order of the zoo plan, the table in docs/design/zoo-graph.md:
 // Kahn's algorithm with the (is DELETE, id) tie-break.
-// var zooOrder = []string{
-//	"GET /animals",
-//	"GET /feeds",
-//	"GET /healthz",
-//	"POST /animals",
-//	"GET /animals/{id}",
-//	"GET /animals/{id}/feedings",
-//	"PATCH /animals/{id}",
-//	"POST /feeds",
-//	"GET /feeds/{id}",
-//	"POST /animals/{id}/feedings",
-//	"POST /feeds/{id}/restock",
-//	"PUT /animals/{id}",
-//	"PUT /feeds/{id}",
-//	"DELETE /animals/{id}",
-//	"DELETE /feeds/{id}",
-// }
+var zooOrder = []string{
+	"GET /animals",
+	"GET /feeds",
+	"GET /healthz",
+	"POST /animals",
+	"GET /animals/{id}",
+	"GET /animals/{id}/feedings",
+	"PATCH /animals/{id}",
+	"POST /feeds",
+	"GET /feeds/{id}",
+	"POST /animals/{id}/feedings",
+	"POST /feeds/{id}/restock",
+	"PUT /animals/{id}",
+	"PUT /feeds/{id}",
+	"DELETE /animals/{id}",
+	"DELETE /feeds/{id}",
+}
 
 func TestSortZooMatchesGoldenOrder(t *testing.T) {
-	t.Skip("TODO: enable once Sort is implemented")
-	// p := loadZoo(t)
-	//
-	// // Guard: the golden file and the table must agree, so a change to one
-	// // without the other fails here and not as a confusing Sort failure.
-	// if !slices.Equal(p.Order, zooOrder) {
-	//	t.Fatalf("golden order differs from zooOrder:\n got: %q\nwant: %q", p.Order, zooOrder)
-	// }
-	//
-	// order, cycles, err := Sort(p.Operations)
-	// if err != nil {
-	//	t.Fatalf("Sort: unexpected error: %v", err)
-	// }
-	// if len(cycles) != 0 {
-	//	t.Errorf("Sort: got cycles %+v, want none", cycles)
-	// }
-	// if !slices.Equal(order, zooOrder) {
-	//	t.Errorf("Sort order:\n got: %q\nwant: %q", order, zooOrder)
-	// }
+	p := loadZoo(t)
+
+	// Guard: the golden file and the table must agree, so a change to one
+	// without the other fails here and not as a confusing Sort failure.
+	if !slices.Equal(p.Order, zooOrder) {
+		t.Fatalf("golden order differs from zooOrder:\n got: %q\nwant: %q", p.Order, zooOrder)
+	}
+
+	order, cycles, err := Sort(p.Operations)
+	if err != nil {
+		t.Fatalf("Sort: unexpected error: %v", err)
+	}
+	if len(cycles) != 0 {
+		t.Errorf("Sort: got cycles %+v, want none", cycles)
+	}
+	if !slices.Equal(order, zooOrder) {
+		t.Errorf("Sort order:\n got: %q\nwant: %q", order, zooOrder)
+	}
 }
 
 func TestSortDeleteComesLast(t *testing.T) {

@@ -76,6 +76,23 @@ make build   # bin/specter and bin/zoo
 make zoo     # run the bug zoo on 127.0.0.1:8080
 ```
 
+## Usage
+
+Only planning works so far: `run` reads a plan and its spec but does not
+send requests yet.
+
+```sh
+make build
+
+# Build a plan from an OpenAPI document (the bug zoo's, here).
+./bin/specter plan --spec internal/zoo/openapi.yaml --out zoo.plan.json
+
+# Check the plan against its spec.
+./bin/specter run --plan zoo.plan.json --spec internal/zoo/openapi.yaml
+
+./bin/specter version
+```
+
 ## Safety
 
 specter sends large volumes of malformed requests. By default it only

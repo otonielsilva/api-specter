@@ -28,6 +28,8 @@ func TestRun(t *testing.T) {
 		{"help", []string{"help"}, nil, true},
 		{"-h", []string{"-h"}, nil, true},
 		{"--help", []string{"--help"}, nil, true},
+		{"version", []string{"version"}, nil, true},
+		{"--version", []string{"--version"}, nil, true},
 	}
 
 	for _, tt := range tests {
@@ -42,6 +44,20 @@ func TestRun(t *testing.T) {
 				t.Errorf("Run(%v) wrote to stdout = %v, want %v", tt.args, got, tt.wantStdout)
 			}
 		})
+	}
+}
+
+func TestVersionCmd(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if err := Run(t.Context(), []string{"version"}, &stdout, &stderr); err != nil {
+		t.Fatalf("Run(version) = %v, want nil", err)
+	}
+	// go test does not pass -ldflags, so version keeps its default.
+	if got, want := stdout.String(), "dev\n"; got != want {
+		t.Errorf("stdout = %q, want %q", got, want)
+	}
+	if stderr.Len() > 0 {
+		t.Errorf("stderr = %q, want empty", stderr.String())
 	}
 }
 

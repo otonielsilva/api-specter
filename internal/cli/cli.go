@@ -32,6 +32,8 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		return planCmd(ctx, args[1:], stdout, stderr)
 	case "run":
 		return runCmd(ctx, args[1:], stdout, stderr)
+	case "version", "--version":
+		return versionCmd(stdout)
 	default:
 		fmt.Fprintf(stderr, "specter: unknown command %q\n\n", args[0])
 		usage(stderr)
@@ -45,5 +47,6 @@ func usage(w io.Writer) {
 	fmt.Fprintln(w, "commands:")
 	fmt.Fprintln(w, "  plan    read an OpenAPI spec and write a fuzz plan (not implemented yet)")
 	fmt.Fprintln(w, "  run     execute a plan against a target (not implemented yet)")
+	fmt.Fprintln(w, "  version show the specter version")
 	fmt.Fprintln(w, "  help    show this message")
 }

@@ -45,7 +45,7 @@ func usage(w io.Writer) {
 	fmt.Fprintln(w, "usage: specter <command> [flags]")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "commands:")
-	fmt.Fprintln(w, "  plan    read an OpenAPI spec and write a fuzz plan (not implemented yet)")
+	fmt.Fprintln(w, "  plan    read an OpenAPI spec and write a fuzz plan")
 	fmt.Fprintln(w, "  run     execute a plan against a target (not implemented yet)")
 	fmt.Fprintln(w, "  version show the specter version")
 	fmt.Fprintln(w, "  help    show this message")

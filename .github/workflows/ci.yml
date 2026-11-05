@@ -20,6 +20,29 @@ jobs:
         run: go mod tidy -diff
       - run: go vet ./...
       - run: go test -race -coverprofile=coverage.out ./...
+      - name: Coverage summary
+        run: |
+          echo "### Coverage" >> "$GITHUB_STEP_SUMMARY"
+          go tool cover -func=coverage.out | tail -n 1 >> "$GITHUB_STEP_SUMMARY"
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # git describe needs the tags to compute VERSION.
+          fetch-depth: 0
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - run: make build
+      - name: Version is injected by -ldflags
+        # The linker ignores a -X that names a missing variable, so check
+        # that the binary does not report the default "dev".
+        run: |
+          v=$(./bin/specter version)
+          echo "specter version: $v"
+          test "$v" != dev
 
   lint:
     runs-on: ubuntu-latest

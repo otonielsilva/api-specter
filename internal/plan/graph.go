@@ -1,6 +1,7 @@
 package plan
 
 import (
+	"fmt"
 	"log/slog"
 	"slices"
 	"strings"
@@ -25,9 +26,9 @@ func Sort(ops map[string]Operator) ([]string, []Cycle, error) {
 	graph := BuildGraph(ops)
 
 	ready := []string{}
-	for ops, node := range graph {
+	for id, node := range graph {
 		if node.pending == 0 {
-			ready = append(ready, ops)
+			ready = append(ready, id)
 		}
 	}
 
@@ -48,7 +49,19 @@ func Sort(ops map[string]Operator) ([]string, []Cycle, error) {
 		}
 	}
 
-	// TODO: if len(order) < len(graph), the rest is in a cycle.
+	if len(order) < len(graph) {
+		// Whatever never reached pending == 0 is in a cycle or waits for
+		// one. Sorted so the message is the same on every run.
+		var stuck []string
+		for id, node := range graph {
+			if node.pending > 0 {
+				stuck = append(stuck, id)
+			}
+		}
+		slices.Sort(stuck)
+		return nil, nil, fmt.Errorf("plan: %w among %q", ErrCycle, stuck)
+	}
+
 	return order, nil, nil
 }
 

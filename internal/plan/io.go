@@ -18,6 +18,10 @@ var (
 
 	// ErrInvalid reports a plan that is valid JSON but breaks the format.
 	ErrInvalid = errors.New("invalid plan")
+
+	// ErrCycle reports operations that wait for each other, so Sort cannot
+	// order them.
+	ErrCycle = errors.New("dependency cycle")
 )
 
 // Load reads a plan from r.

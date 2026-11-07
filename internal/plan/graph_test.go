@@ -1,7 +1,9 @@
 package plan
 
 import (
+	"errors"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -65,45 +67,160 @@ func TestSortZooMatchesGoldenOrder(t *testing.T) {
 	}
 }
 
+// Kahn alone does not put DELETEs last; the (is DELETE, id) key does.
 func TestSortDeleteComesLast(t *testing.T) {
-	t.Skip("TODO: write me")
-	// Property test: for every DELETE in the result, no non-DELETE comes after
-	// it unless that operation transitively needs the DELETE (it never does in
-	// the zoo). Kahn alone does not give this, the (is DELETE, id) key does.
-	// Smaller case: DELETE /x/{id} and GET /x/{id} both depend on POST /x;
 	// GET must come first even though "DELETE" < "GET" alphabetically.
+	t.Run("small", func(t *testing.T) {
+		// GET and DELETE both require a value produced by POST.
+		ops := graph(map[string][]string{
+			"POST /x":        nil,
+			"DELETE /x/{id}": {"POST /x"},
+			"GET /x/{id}":    {"POST /x"},
+		})
+
+		got := mustSort(t, ops)
+
+		getIndex := slices.Index(got, "GET /x/{id}")
+		deleteIndex := slices.Index(got, "DELETE /x/{id}")
+		if getIndex == -1 || deleteIndex == -1 {
+			t.Fatalf("Sort order %q is missing GET /x/{id} or DELETE /x/{id}", got)
+		}
+		if getIndex >= deleteIndex {
+			t.Errorf("GET /x/{id} at %d, DELETE /x/{id} at %d, want GET first; order %q",
+				getIndex, deleteIndex, got)
+		}
+	})
+
+	// From the first DELETE on, everything is a DELETE. This holds because
+	// nothing in the zoo requires a value produced by a DELETE.
+	t.Run("zoo", func(t *testing.T) {
+		got := mustSort(t, loadZoo(t).Operations)
+
+		first := slices.IndexFunc(got, isDelete)
+		if first == -1 {
+			t.Fatalf("Sort order %q has no DELETE, want at least one", got)
+		}
+		for i, id := range got[first:] {
+			if !isDelete(id) {
+				t.Errorf("%q at %d comes after DELETE %q at %d; order %q",
+					id, first+i, got[first], first, got)
+			}
+		}
+	})
 }
 
+// Map iteration order is random in Go and Sort ranges over maps (the graph
+// and each node's dependents), so one run proves little: compare many runs.
 func TestSortIsDeterministic(t *testing.T) {
-	t.Skip("TODO: write me")
-	// Same graph, many runs (map iteration order is random in Go, so loop
-	// like TestParseOpenAPIDeterministicOrder does): the order never changes.
+	ops := loadZoo(t).Operations
+	want := mustSort(t, ops)
+
+	for i := range 200 {
+		got := mustSort(t, ops)
+		if !slices.Equal(got, want) {
+			t.Fatalf("run %d: Sort order changed:\n got: %q\nwant: %q", i, got, want)
+		}
+	}
 }
 
+// For every edge producer -> consumer, the producer comes before the consumer.
 func TestSortIsTopological(t *testing.T) {
-	t.Skip("TODO: write me")
-	// For every edge producer -> consumer, producer appears before consumer
-	// in the result. Check it with a map id -> position, on the zoo graph.
+	ops := loadZoo(t).Operations
+	got := mustSort(t, ops)
+
+	if len(got) != len(ops) {
+		t.Fatalf("Sort returned %d operations, want %d; order %q", len(got), len(ops), got)
+	}
+
+	pos := make(map[string]int, len(got))
+	for i, id := range got {
+		pos[id] = i
+	}
+
+	edges := 0
+	for consumer, op := range ops {
+		for _, req := range op.Requires {
+			for _, prod := range req.Producers {
+				if prod.Op == consumer {
+					continue // self-loops are ignored by Sort
+				}
+				edges++
+				if pos[prod.Op] >= pos[consumer] {
+					t.Errorf("producer %q at %d, consumer %q at %d, want producer first",
+						prod.Op, pos[prod.Op], consumer, pos[consumer])
+				}
+			}
+		}
+	}
+	// Guard: without edges the check above passes for any order.
+	if edges == 0 {
+		t.Fatal("zoo plan has no edges, the test checks nothing")
+	}
 }
 
 func TestSortNoOperations(t *testing.T) {
-	t.Skip("TODO: write me")
-	// nil and empty map: empty (non-nil) order, no cycles, no error.
+	tests := []struct {
+		name string
+		ops  map[string]Operator
+	}{
+		{name: "nil", ops: nil},
+		{name: "empty", ops: map[string]Operator{}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := mustSort(t, tt.ops)
+			// Non-nil so the plan's "order" is [] in the JSON, not null.
+			if got == nil || len(got) != 0 {
+				t.Errorf("Sort order = %#v, want empty non-nil slice", got)
+			}
+		})
+	}
 }
 
 // Step 2: cycle detection.
 
 func TestSortSelfLoopIsIgnored(t *testing.T) {
-	t.Skip("TODO: write me")
-	// A requires a value produced by A: no error, A is in the order once,
-	// and Cycles stays empty (section 4: self-loops are ignored).
+	got := mustSort(t, graph(map[string][]string{
+		"POST /x": {"POST /x"},
+	}))
+	if want := []string{"POST /x"}; !slices.Equal(got, want) {
+		t.Errorf("Sort order = %q, want %q", got, want)
+	}
 }
 
+// Before step 3 exists Sort fails on a cycle. Once step 3 is done this test
+// moves to the cycle-breaking table.
 func TestSortDetectsCycle(t *testing.T) {
-	t.Skip("TODO: write me")
 	// A <-> B (each requires the other) plus an independent C.
-	// Before step 3 exists: expect an error whose message names A and B and
-	// not C. Once step 3 is done this test moves to the cycle-breaking table.
+	ops := graph(map[string][]string{
+		"A": {"B"},
+		"B": {"A"},
+		"C": nil,
+	})
+
+	got, cycles, err := Sort(ops)
+	if !errors.Is(err, ErrCycle) {
+		t.Fatalf("Sort error = %v, want %v", err, ErrCycle)
+	}
+	if got != nil {
+		t.Errorf("Sort order = %q, want nil on error", got)
+	}
+	if cycles != nil {
+		t.Errorf("Sort cycles = %+v, want nil on error", cycles)
+	}
+
+	// Ids are quoted in the message, so `"C"` cannot match a letter of
+	// another word.
+	msg := err.Error()
+	for _, id := range []string{`"A"`, `"B"`} {
+		if !strings.Contains(msg, id) {
+			t.Errorf("error %q does not name %s", msg, id)
+		}
+	}
+	if strings.Contains(msg, `"C"`) {
+		t.Errorf("error %q names \"C\", which is not in the cycle", msg)
+	}
 }
 
 // Step 3: deterministic cycle breaking.
@@ -197,6 +314,24 @@ func checkGraph(t *testing.T, got map[string]*Node, want map[string]wantNode) {
 			t.Errorf("node %q pending = %d, want %d", id, n.pending, w.pending)
 		}
 	}
+}
+
+// isDelete reports whether the operation id is a DELETE.
+func isDelete(id string) bool {
+	return strings.HasPrefix(id, "DELETE ")
+}
+
+// mustSort calls Sort and stops the test on an error or on any cycle.
+func mustSort(t *testing.T, ops map[string]Operator) []string {
+	t.Helper()
+	got, cycles, err := Sort(ops)
+	if err != nil {
+		t.Fatalf("Sort: unexpected error: %v", err)
+	}
+	if len(cycles) != 0 {
+		t.Fatalf("Sort: got cycles %+v, want none", cycles)
+	}
+	return got
 }
 
 func TestBuildGraphZooMatchesGolden(t *testing.T) {

@@ -31,9 +31,27 @@ func TestBuild(t *testing.T) {
 	if p.Version != 1 || p.Generator != HeuristicGenerated {
 		t.Errorf("Version/Generator = %d/%q", p.Version, p.Generator)
 	}
-	// Only the set is checked: the order is decided by the grafo step later.
-	if got, want := slices.Sorted(slices.Values(p.Order)), []string{"GET /pets", "POST /pets"}; !reflect.DeepEqual(got, want) {
-		t.Errorf("Order = %v, want operations %v", p.Order, want)
+	// No edges between the two, so Sort orders them by id.
+	if want := []string{"GET /pets", "POST /pets"}; !slices.Equal(p.Order, want) {
+		t.Errorf("Order = %q, want %q", p.Order, want)
+	}
+}
+
+// Build takes the order from Sort, not from the contract. None of these
+// operations has a {param} or a body, so there are no edges and the order is
+// just the (is DELETE, id) key.
+func TestBuildOrderPutsDeleteLast(t *testing.T) {
+	// Contract order is the reverse of the expected one, so keeping it would fail.
+	c := &contract.Contract{Operations: []contract.Operation{
+		{Method: "DELETE", Path: "/pets"},
+		{Method: "POST", Path: "/pets"},
+		{Method: "GET", Path: "/pets"},
+	}}
+
+	p := mustBuild(t, c, "api.yaml", nil)
+
+	if want := []string{"GET /pets", "POST /pets", "DELETE /pets"}; !slices.Equal(p.Order, want) {
+		t.Errorf("Order = %q, want %q", p.Order, want)
 	}
 }
 

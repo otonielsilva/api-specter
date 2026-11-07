@@ -256,15 +256,7 @@ func TestValidateOrder(t *testing.T) {
 	// And a good one: the zoo plan (testdata/zoo.plan.json) returns nil.
 }
 
-// Step 5: wiring into Build.
-
-func TestBuildOrderPutsDeleteLast(t *testing.T) {
-	t.Skip("TODO: write me")
-	// Build with a contract with GET, POST and DELETE on /pets: Requires is
-	// still empty (no heuristic yet), so Order is just (is DELETE, id):
-	// GET /pets, POST /pets, DELETE /pets. Replaces the "only the set is
-	// checked" comment in TestBuild.
-}
+// Step 5: wiring into Build. See TestBuildOrderPutsDeleteLast in build_test.go.
 
 // BuildGraph: edges and pending counts.
 

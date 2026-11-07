@@ -19,7 +19,7 @@ func TestBuild(t *testing.T) {
 	}}
 	spec := []byte("openapi: 3.0.3")
 
-	p := Build(c, "api.yaml", spec)
+	p := mustBuild(t, c, "api.yaml", spec)
 
 	sum := sha256.Sum256(spec)
 	if want := "sha256:" + hex.EncodeToString(sum[:]); p.Spec.Hash != want {
@@ -43,7 +43,7 @@ func TestBuildListsEveryOperationWithEmptySlices(t *testing.T) {
 		{Method: "DELETE", Path: "/pets/{id}"},
 	}}
 
-	p := Build(c, "api.yaml", nil)
+	p := mustBuild(t, c, "api.yaml", nil)
 
 	if len(p.Operations) != 2 {
 		t.Fatalf("len(Operations) = %d, want 2", len(p.Operations))
@@ -67,7 +67,7 @@ func TestBuildListsEveryOperationWithEmptySlices(t *testing.T) {
 }
 
 func TestBuildNoOperationsHasEmptyOrder(t *testing.T) {
-	p := Build(&contract.Contract{}, "api.yaml", nil)
+	p := mustBuild(t, &contract.Contract{}, "api.yaml", nil)
 	if p.Order == nil || len(p.Order) != 0 {
 		t.Errorf("Order = %#v, want empty non-nil slice", p.Order)
 	}
@@ -82,7 +82,7 @@ func TestBuildPathParamWithPostOnCollectionRequiresProducer(t *testing.T) {
 		{Method: contract.POST, Path: "/orphan"},
 	}}
 
-	p := Build(c, "api.yaml", nil)
+	p := mustBuild(t, c, "api.yaml", nil)
 
 	op, ok := p.Operations["GET /animal/{id}"]
 	if !ok {
@@ -104,7 +104,7 @@ func TestBuildOperationWithoutPathParamHasNoRequires(t *testing.T) {
 		{Method: contract.POST, Path: "/animal"},
 	}}
 
-	p := Build(c, "api.yaml", nil)
+	p := mustBuild(t, c, "api.yaml", nil)
 
 	for _, id := range []string{"GET /animal", "POST /animal"} {
 		op, ok := p.Operations[id]
@@ -130,7 +130,7 @@ func TestBuildPathParamWithoutPostOnCollectionIsSeedNeeded(t *testing.T) {
 		{Method: contract.GET, Path: "/stray/{id}"},
 	}}
 
-	p := Build(c, "api.yaml", nil)
+	p := mustBuild(t, c, "api.yaml", nil)
 
 	for _, id := range []string{"GET /orphan/{id}", "GET /stray/{id}"} {
 		op, ok := p.Operations[id]
@@ -160,7 +160,7 @@ func TestBuildTwoPathParamsRequireOneProducerEach(t *testing.T) {
 		{Method: contract.POST, Path: "/owner/{ownerId}/pet"},
 	}}
 
-	p := Build(c, "api.yaml", nil)
+	p := mustBuild(t, c, "api.yaml", nil)
 
 	op, ok := p.Operations["GET /owner/{ownerId}/pet/{petId}"]
 	if !ok {
@@ -195,7 +195,7 @@ func TestBuildMixedPathParamsSplitBetweenRequiresAndSeeds(t *testing.T) {
 		{Method: contract.POST, Path: "/owner"},
 	}}
 
-	p := Build(c, "api.yaml", nil)
+	p := mustBuild(t, c, "api.yaml", nil)
 
 	op, ok := p.Operations["GET /owner/{ownerId}/pet/{petId}"]
 	if !ok {
@@ -302,7 +302,7 @@ func TestBuildBodyFieldRequiresProducerOfReferencedCollection(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p := Build(&contract.Contract{Operations: tt.ops}, "api.yaml", nil)
+			p := mustBuild(t, &contract.Contract{Operations: tt.ops}, "api.yaml", nil)
 
 			got := p.Operations[tt.ops[len(tt.ops)-1].BuildID()].Requires
 			if len(tt.want) == 0 && len(got) == 0 {
@@ -323,7 +323,7 @@ func TestBuildBodyFieldAlreadyRequiredByPathIsSkipped(t *testing.T) {
 		}},
 	}}
 
-	p := Build(c, "api.yaml", nil)
+	p := mustBuild(t, c, "api.yaml", nil)
 
 	got := p.Operations["POST /feeds/{id}/restock"].Requires
 	if len(got) != 1 || got[0].In != Path {
@@ -340,7 +340,7 @@ func TestBuildPostEndingInParamIsNotAProducer(t *testing.T) {
 		{Method: contract.GET, Path: "/animals/{id}/{sub}"},
 	}}
 
-	p := Build(c, "api.yaml", nil)
+	p := mustBuild(t, c, "api.yaml", nil)
 
 	op, ok := p.Operations["GET /animals/{id}/{sub}"]
 	if !ok {
@@ -374,7 +374,7 @@ func TestBuildZooMatchesGoldenRequires(t *testing.T) {
 		t.Fatalf("read zoo spec: %v", err)
 	}
 
-	got := Build(c, specPath, spec)
+	got := mustBuild(t, c, specPath, spec)
 	want := loadZoo(t)
 
 	// The loop below only visits what the golden has, so an extra operation in
@@ -402,4 +402,14 @@ func TestBuildZooMatchesGoldenRequires(t *testing.T) {
 	if !reflect.DeepEqual(got.SeedsNeeded, want.SeedsNeeded) {
 		t.Errorf("SeedsNeeded = %#v, want %#v", got.SeedsNeeded, want.SeedsNeeded)
 	}
+}
+
+// mustBuild calls Build and stops the test if it returns an error.
+func mustBuild(t *testing.T, c *contract.Contract, specPath string, specBytes []byte) *Plan {
+	t.Helper()
+	p, err := Build(c, specPath, specBytes)
+	if err != nil {
+		t.Fatalf("Build: unexpected error: %v", err)
+	}
+	return p
 }

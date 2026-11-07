@@ -13,7 +13,7 @@ import (
 // Build derives a plan from a contract. specPath is stored as written and
 // specBytes are the raw bytes of the document the contract was parsed from;
 // their SHA-256 goes into Spec.Hash so "run" can detect a stale plan.
-func Build(c *contract.Contract, specPath string, specBytes []byte) *Plan {
+func Build(c *contract.Contract, specPath string, specBytes []byte) (*Plan, error) {
 	sum := sha256.Sum256(specBytes)
 
 	p := &Plan{
@@ -23,7 +23,6 @@ func Build(c *contract.Contract, specPath string, specBytes []byte) *Plan {
 			Path: specPath,
 			Hash: "sha256:" + hex.EncodeToString(sum[:]),
 		},
-		Order:      make([]string, 0, len(c.Operations)),
 		Operations: make(map[string]Operator, len(c.Operations)),
 	}
 
@@ -33,8 +32,6 @@ func Build(c *contract.Contract, specPath string, specBytes []byte) *Plan {
 
 	for _, op := range c.Operations {
 		id := op.BuildID()
-
-		p.Order = append(p.Order, id)
 
 		requires, seeds := pathRequirements(op, producerByPath)
 		p.SeedsNeeded = append(p.SeedsNeeded, seeds...)
@@ -48,7 +45,16 @@ func Build(c *contract.Contract, specPath string, specBytes []byte) *Plan {
 	// Empty, not null, in the JSON: SeedsNeeded, Cycles and each entry's
 	// Tags and Requires.
 	p.fillEmpty()
-	return p
+
+	// TODO(step 3): Sort will break cycles instead of failing; store them in
+	// p.Cycles then (only when non-nil, so the JSON keeps [] and not null).
+	order, _, err := Sort(p.Operations)
+	if err != nil {
+		return nil, err
+	}
+	p.Order = order
+
+	return p, nil
 }
 
 // indexPosts indexes the POST operations that create a collection, those

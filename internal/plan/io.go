@@ -19,8 +19,8 @@ var (
 	// ErrInvalid reports a plan that is valid JSON but breaks the format.
 	ErrInvalid = errors.New("invalid plan")
 
-	// ErrCycle reports operations that wait for each other, so Sort cannot
-	// order them.
+	// ErrCycle reports operations that still wait after Sort broke every
+	// cycle it found. Sort breaks cycles, so this means a bug in Sort.
 	ErrCycle = errors.New("dependency cycle")
 )
 

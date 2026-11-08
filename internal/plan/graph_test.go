@@ -301,18 +301,7 @@ func TestSortCycleBreakingIsDeterministic(t *testing.T) {
 	}
 }
 
-// Step 4: Validate (check of an order against the edges).
-
-func TestValidateOrder(t *testing.T) {
-	t.Skip("TODO: write me")
-	// Suggested: func Validate(p *Plan) error
-	// Table of bad plans, each error must name the operation:
-	//   1. order is missing an operation that is in Operations
-	//   2. order contains an id that is not in Operations
-	//   3. a producer comes after its consumer
-	//   4. a duplicated id in order
-	// And a good one: the zoo plan (testdata/zoo.plan.json) returns nil.
-}
+// Step 4: Validate. See validate_test.go.
 
 // Step 5: wiring into Build. See TestBuildOrderPutsDeleteLast in build_test.go.
 

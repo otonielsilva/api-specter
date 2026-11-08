@@ -47,7 +47,7 @@ func planCmd(ctx context.Context, args []string, stdout, stderr io.Writer) error
 
 	p, err := plan.Build(doc, *spec, raw)
 	if err != nil {
-		return fmt.Errorf("build plan: %w", err)
+		return fmt.Errorf("plan: build: %w", err)
 	}
 
 	fmt.Fprintf(stderr, "plan created %d paths from %s\n", len(doc.Operations), *spec)

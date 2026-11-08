@@ -59,7 +59,8 @@ func Sort(ops map[string]Operator) ([]string, []Cycle, error) {
 			}
 		}
 		slices.Sort(stuck)
-		return nil, nil, fmt.Errorf("plan: %w among %q", ErrCycle, stuck)
+		// No "plan:" prefix: the caller wraps it with the command name.
+		return nil, nil, fmt.Errorf("%w among %q", ErrCycle, stuck)
 	}
 
 	return order, nil, nil

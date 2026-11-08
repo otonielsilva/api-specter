@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"os"
 	"reflect"
 	"slices"
@@ -400,8 +401,11 @@ func TestBuildZooMatchesGoldenRequires(t *testing.T) {
 	if len(got.Operations) != len(want.Operations) {
 		t.Errorf("len(Operations) = %d, want %d", len(got.Operations), len(want.Operations))
 	}
-	// Only Requires and SeedsNeeded are compared: Order waits for Sort, the
-	// golden Tags are not generated yet, and Spec/Generator are hand-written.
+	// Order, Requires and SeedsNeeded are compared: the golden Tags are not
+	// generated yet, and Spec/Generator are hand-written.
+	if !slices.Equal(got.Order, want.Order) {
+		t.Errorf("Order:\n got: %q\nwant: %q", got.Order, want.Order)
+	}
 	for id, wantOp := range want.Operations {
 		gotOp, ok := got.Operations[id]
 		if !ok {
@@ -419,6 +423,30 @@ func TestBuildZooMatchesGoldenRequires(t *testing.T) {
 	// Whole-plan field, so it stays outside the loop. The zoo has no seeds.
 	if !reflect.DeepEqual(got.SeedsNeeded, want.SeedsNeeded) {
 		t.Errorf("SeedsNeeded = %#v, want %#v", got.SeedsNeeded, want.SeedsNeeded)
+	}
+}
+
+// POST /animals needs a feedId and POST /feeds needs an animalId, so each
+// producer waits for the other. Until Sort breaks cycles, Build must fail
+// with ErrCycle and return no plan.
+func TestBuildReturnsErrCycle(t *testing.T) {
+	body := func(field string) map[string]*contract.Schema {
+		return map[string]*contract.Schema{"application/json": {
+			Type:       contract.SchemaTypeObject,
+			Properties: map[string]*contract.Schema{field: {Type: contract.SchemaTypeString}},
+		}}
+	}
+	c := &contract.Contract{Operations: []contract.Operation{
+		{Method: contract.POST, Path: "/animals", Bodies: body("feedId")},
+		{Method: contract.POST, Path: "/feeds", Bodies: body("animalId")},
+	}}
+
+	p, err := Build(c, "api.yaml", nil)
+	if !errors.Is(err, ErrCycle) {
+		t.Fatalf("Build error = %v, want %v", err, ErrCycle)
+	}
+	if p != nil {
+		t.Errorf("Build plan = %+v, want nil on error", p)
 	}
 }
 

@@ -37,6 +37,38 @@ func TestBuild(t *testing.T) {
 	}
 }
 
+// Tags come from the contract in document order, and a DELETE also gets
+// TagDestructive, once even when the document already has it.
+func TestBuildTags(t *testing.T) {
+	c := &contract.Contract{Operations: []contract.Operation{
+		{Method: "GET", Path: "/pets", Tags: []string{"pets", "read"}},
+		{Method: "DELETE", Path: "/pets/{id}", Tags: []string{"pets"}},
+		{Method: "DELETE", Path: "/toys/{id}", Tags: []string{TagDestructive, "toys"}},
+		{Method: "POST", Path: "/pets"},
+	}}
+
+	p := mustBuild(t, c, "api.yaml", nil)
+
+	want := map[string][]string{
+		"GET /pets":         {"pets", "read"},
+		"DELETE /pets/{id}": {"pets", TagDestructive},
+		"DELETE /toys/{id}": {TagDestructive, "toys"},
+		"POST /pets":        {},
+	}
+	for id, w := range want {
+		got := p.Operations[id].Tags
+		// Equal plus a nil check: an untagged operation must still be [] in JSON.
+		if got == nil || !slices.Equal(got, w) {
+			t.Errorf("%s: Tags = %#v, want %q", id, got, w)
+		}
+	}
+	// Build copies the tags, so the plan does not share the contract's slice.
+	p.Operations["GET /pets"].Tags[0] = "changed"
+	if c.Operations[0].Tags[0] != "pets" {
+		t.Errorf("contract Tags changed to %q through the plan", c.Operations[0].Tags)
+	}
+}
+
 // Build takes the order from Sort, not from the contract. None of these
 // operations has a {param} or a body, so there are no edges and the order is
 // just the (is DELETE, id) key.
@@ -377,10 +409,10 @@ func TestBuildPostEndingInParamIsNotAProducer(t *testing.T) {
 	}
 }
 
-// TestBuildZooMatchesGoldenRequires checks that Build, run on the zoo spec,
-// derives the same dependencies as the golden plan. If a rule changes, the
+// TestBuildZooMatchesGolden checks that Build, run on the zoo spec, derives
+// the same order, tags and dependencies as the golden plan. If a rule changes, the
 // golden has to change with it, on purpose.
-func TestBuildZooMatchesGoldenRequires(t *testing.T) {
+func TestBuildZooMatchesGolden(t *testing.T) {
 	const specPath = "../zoo/openapi.yaml"
 	c, err := contract.ParseOpenAPI(context.Background(), specPath)
 	if err != nil {
@@ -400,8 +432,8 @@ func TestBuildZooMatchesGoldenRequires(t *testing.T) {
 	if len(got.Operations) != len(want.Operations) {
 		t.Errorf("len(Operations) = %d, want %d", len(got.Operations), len(want.Operations))
 	}
-	// Order, Requires and SeedsNeeded are compared: the golden Tags are not
-	// generated yet, and Spec/Generator are hand-written.
+	// Order, Tags, Requires and SeedsNeeded are compared: Spec and Generator
+	// are hand-written in the golden.
 	if !slices.Equal(got.Order, want.Order) {
 		t.Errorf("Order:\n got: %q\nwant: %q", got.Order, want.Order)
 	}
@@ -411,6 +443,9 @@ func TestBuildZooMatchesGoldenRequires(t *testing.T) {
 			t.Errorf("missing operation %q", id)
 			// Skip to the next operation, so every divergence is reported.
 			continue
+		}
+		if !slices.Equal(gotOp.Tags, wantOp.Tags) {
+			t.Errorf("%s: Tags = %q, want %q", id, gotOp.Tags, wantOp.Tags)
 		}
 		// DeepEqual, not ==: Requirement holds slices. It also tells nil from
 		// an empty slice, which is why both sides go through fillEmpty.

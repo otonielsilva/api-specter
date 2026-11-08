@@ -38,9 +38,8 @@ func Build(c *contract.Contract, specPath string, specBytes []byte) (*Plan, erro
 		requires = append(requires, bodyRequirements(op, requires, producerByPath, byLastSeg)...)
 
 		// Every operation gets an entry, even with nothing to require, so
-		// the owner can see where to fill one in. Tags stay empty until the
-		// dependency step exists.
-		p.Operations[id] = Operator{Enabled: true, Requires: requires}
+		// the owner can see where to fill one in.
+		p.Operations[id] = Operator{Enabled: true, Tags: operationTags(op), Requires: requires}
 	}
 	// Empty, not null, in the JSON: SeedsNeeded, Cycles and each entry's
 	// Tags and Requires.
@@ -57,6 +56,20 @@ func Build(c *contract.Contract, specPath string, specBytes []byte) (*Plan, erro
 	}
 
 	return p, nil
+}
+
+// TagDestructive marks an operation that deletes data, so "run" can skip it
+// unless asked to include destructive operations.
+const TagDestructive = "destructive"
+
+// operationTags returns the OpenAPI tags of op, in the order of the
+// document, plus TagDestructive for a DELETE.
+func operationTags(op contract.Operation) []string {
+	tags := slices.Clone(op.Tags)
+	if op.Method == contract.DELETE && !slices.Contains(tags, TagDestructive) {
+		tags = append(tags, TagDestructive)
+	}
+	return tags
 }
 
 // indexPosts indexes the POST operations that create a collection, those

@@ -39,6 +39,7 @@ func ParseOpenAPI(ctx context.Context, fileLocation string) (*Contract, error) {
 				ID:           op.OperationID,
 				Method:       Method(method),
 				Path:         path,
+				Tags:         slices.Clone(op.Tags),
 				Params:       convertParams(pathItem.Parameters, op.Parameters, memo),
 				Bodies:       requestBodies,
 				BodyRequired: required,

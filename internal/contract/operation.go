@@ -63,6 +63,8 @@ type Operation struct {
 	ID     string
 	Method Method
 	Path   string
+	// Tags are the operation's OpenAPI tags, in the order of the document.
+	Tags []string
 	// Bodies maps each media type the operation accepts (e.g.
 	// "application/json") to the schema of its request body. It is empty
 	// when the operation takes no body. A media type declared without a

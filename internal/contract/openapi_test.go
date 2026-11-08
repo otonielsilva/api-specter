@@ -301,3 +301,40 @@ func TestParseOpenAPISharesSchemaAcrossRequestAndResponse(t *testing.T) {
 		t.Errorf("request = %p, response = %p, want the same pointer", req, resp)
 	}
 }
+
+// Tags are kept per operation in document order; an untagged operation has
+// none. The zoo spec tags every operation, with the sub-resource feedings
+// tagged on its own.
+func TestParseOpenAPITags(t *testing.T) {
+	c, err := ParseOpenAPI(context.Background(), "../zoo/openapi.yaml")
+	if err != nil {
+		t.Fatalf("ParseOpenAPI() error = %v", err)
+	}
+	want := map[string][]string{
+		"GET /healthz":               {"health"},
+		"GET /animals/{id}":          {"animals"},
+		"GET /animals/{id}/feedings": {"feedings"},
+		"DELETE /feeds/{id}":         {"feeds"},
+	}
+	for _, op := range c.Operations {
+		w, ok := want[op.BuildID()]
+		if !ok {
+			continue
+		}
+		delete(want, op.BuildID())
+		if !slices.Equal(op.Tags, w) {
+			t.Errorf("%s: Tags = %q, want %q", op.BuildID(), op.Tags, w)
+		}
+	}
+	for id := range want {
+		t.Errorf("operation %q not found", id)
+	}
+
+	c, err = ParseOpenAPI(context.Background(), "testdata/params.yaml")
+	if err != nil {
+		t.Fatalf("ParseOpenAPI() error = %v", err)
+	}
+	if tags := c.Operations[0].Tags; len(tags) != 0 {
+		t.Errorf("untagged operation: Tags = %q, want none", tags)
+	}
+}

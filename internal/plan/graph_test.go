@@ -1,28 +1,17 @@
 package plan
 
 import (
-	"errors"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
 )
 
 // These tests cover Sort (see docs/design/plan-and-run.md, sections 4 and 8).
-// Sort has no code yet, so the bodies are comments: uncomment the call and
-// fill in as you implement each step.
-//
-// Suggested signature:
-//
-//	func Sort(ops map[string]Operator) ([]string, []Cycle, error)
-//
 // Edges come from Operator.Requires[i].Producers[j].Op -> the operation
-// (every producer is an edge, so OR is treated as AND in v0).
-//
-// Tip: build graphs with a small helper instead of repeating struct literals:
-//
-//	func graph(deps map[string][]string) map[string]Operator
-//
-// where deps["B"] = []string{"A"} means B requires a value produced by A.
+// (every producer is an edge, so OR is treated as AND in v0). Graphs are
+// built with graph(deps), where deps["B"] = []string{"A"} means B requires a
+// value produced by A.
 
 // Step 1: ordering a graph with no cycle.
 
@@ -178,7 +167,7 @@ func TestSortNoOperations(t *testing.T) {
 	}
 }
 
-// Step 2: cycle detection.
+// Step 2: self-loops.
 
 func TestSortSelfLoopIsIgnored(t *testing.T) {
 	got := mustSort(t, graph(map[string][]string{
@@ -189,58 +178,127 @@ func TestSortSelfLoopIsIgnored(t *testing.T) {
 	}
 }
 
-// Before step 3 exists Sort fails on a cycle. Once step 3 is done this test
-// moves to the cycle-breaking table.
-func TestSortDetectsCycle(t *testing.T) {
-	// A <-> B (each requires the other) plus an independent C.
-	ops := graph(map[string][]string{
-		"A": {"B"},
-		"B": {"A"},
-		"C": nil,
-	})
-
-	got, cycles, err := Sort(ops)
-	if !errors.Is(err, ErrCycle) {
-		t.Fatalf("Sort error = %v, want %v", err, ErrCycle)
-	}
-	if got != nil {
-		t.Errorf("Sort order = %q, want nil on error", got)
-	}
-	if cycles != nil {
-		t.Errorf("Sort cycles = %+v, want nil on error", cycles)
-	}
-
-	// Ids are quoted in the message, so `"C"` cannot match a letter of
-	// another word.
-	msg := err.Error()
-	for _, id := range []string{`"A"`, `"B"`} {
-		if !strings.Contains(msg, id) {
-			t.Errorf("error %q does not name %s", msg, id)
-		}
-	}
-	if strings.Contains(msg, `"C"`) {
-		t.Errorf("error %q names \"C\", which is not in the cycle", msg)
-	}
-}
-
 // Step 3: deterministic cycle breaking.
 
-func TestSortBreaksCycles(t *testing.T) {
-	t.Skip("TODO: write me")
-	// Table test. For each case: the graph, the expected Order, the expected
-	// Cycles (Ops and Dropped). Cases:
-	//   1. simple cycle A <-> B: one edge dropped, recorded in Cycles
-	//   2. two separate cycles: two entries in Cycles
-	//   3. cycle where only one edge has a non-POST producer: that edge is
-	//      the one dropped (rule suggested in section 4)
-	//   4. tie between two candidate edges: the one with the smaller id wins
-	// Note: the rule for which edge to drop is still open in the design doc.
-	// Decide it before writing the expected values and write it in a comment.
+// drop is the Edge Sort records for a dropped edge built by graph, whose
+// Requirements all have the param "id".
+func drop(from, to string) Edge {
+	return Edge{From: from, To: to, Param: "id"}
 }
 
+// The edge dropped is the smallest by (producer is a POST, from, to): an edge
+// whose producer is not a POST first, then the smaller ids. In graph(...),
+// deps["B"] = {"A"} is the edge A -> B.
+func TestSortBreaksCycles(t *testing.T) {
+	tests := []struct {
+		name   string
+		deps   map[string][]string
+		order  []string
+		cycles []Cycle
+	}{
+		{
+			// C is ready from the start, so it runs before the cycle is
+			// broken. Of A -> B and B -> A, A -> B has the smaller from.
+			name:   "simple cycle and an independent operation",
+			deps:   map[string][]string{"A": {"B"}, "B": {"A"}, "C": nil},
+			order:  []string{"C", "B", "A"},
+			cycles: []Cycle{{Ops: []string{"A", "B"}, Dropped: drop("A", "B")}},
+		},
+		{
+			name:  "two separate cycles",
+			deps:  map[string][]string{"A": {"B"}, "B": {"A"}, "C": {"D"}, "D": {"C"}},
+			order: []string{"B", "A", "D", "C"},
+			cycles: []Cycle{
+				{Ops: []string{"A", "B"}, Dropped: drop("A", "B")},
+				{Ops: []string{"C", "D"}, Dropped: drop("C", "D")},
+			},
+		},
+		{
+			// By id alone POST /x -> PUT /y would go ("POST" < "PUT"), but
+			// its producer is a POST, so PUT /y -> POST /x is dropped.
+			name:   "the edge whose producer is not a POST is dropped",
+			deps:   map[string][]string{"POST /x": {"PUT /y"}, "PUT /y": {"POST /x"}},
+			order:  []string{"POST /x", "PUT /y"},
+			cycles: []Cycle{{Ops: []string{"POST /x", "PUT /y"}, Dropped: drop("PUT /y", "POST /x")}},
+		},
+		{
+			name:   "both producers are POSTs: the smaller id wins",
+			deps:   map[string][]string{"POST /a": {"POST /b"}, "POST /b": {"POST /a"}},
+			order:  []string{"POST /b", "POST /a"},
+			cycles: []Cycle{{Ops: []string{"POST /a", "POST /b"}, Dropped: drop("POST /a", "POST /b")}},
+		},
+		{
+			// A -> B -> C -> A: three candidates, A -> B has the smallest from.
+			name:   "three operations in one cycle",
+			deps:   map[string][]string{"A": {"C"}, "B": {"A"}, "C": {"B"}},
+			order:  []string{"B", "C", "A"},
+			cycles: []Cycle{{Ops: []string{"A", "B", "C"}, Dropped: drop("A", "B")}},
+		},
+		{
+			// D only waits for the cycle, so it is not in Ops.
+			name:   "an operation waiting for a cycle is not part of it",
+			deps:   map[string][]string{"A": {"B"}, "B": {"A"}, "D": {"A"}},
+			order:  []string{"B", "A", "D"},
+			cycles: []Cycle{{Ops: []string{"A", "B"}, Dropped: drop("A", "B")}},
+		},
+		{
+			// A <-> B and B <-> C share B, so one component of three. After
+			// A -> B goes, B still waits for C: a second drop in B <-> C.
+			name:  "overlapping cycles need two drops",
+			deps:  map[string][]string{"A": {"B"}, "B": {"A", "C"}, "C": {"B"}},
+			order: []string{"C", "B", "A"},
+			cycles: []Cycle{
+				{Ops: []string{"A", "B", "C"}, Dropped: drop("A", "B")},
+				{Ops: []string{"B", "C"}, Dropped: drop("B", "C")},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			order, cycles, err := Sort(graph(tt.deps))
+			if err != nil {
+				t.Fatalf("Sort: unexpected error: %v", err)
+			}
+			if !slices.Equal(order, tt.order) {
+				t.Errorf("Sort order = %q, want %q", order, tt.order)
+			}
+			if !reflect.DeepEqual(cycles, tt.cycles) {
+				t.Errorf("Sort cycles:\n got: %+v\nwant: %+v", cycles, tt.cycles)
+			}
+		})
+	}
+}
+
+// Picking the edge to drop walks maps, so like TestSortIsDeterministic this
+// compares many runs, on a graph with two cycles and an operation waiting.
 func TestSortCycleBreakingIsDeterministic(t *testing.T) {
-	t.Skip("TODO: write me")
-	// Same cyclic graph, many runs: same Order and same Cycles every time.
+	ops := graph(map[string][]string{
+		"A": {"B"}, "B": {"A", "C"}, "C": {"B"},
+		"POST /x": {"PUT /y"}, "PUT /y": {"POST /x"},
+		"D": {"A", "POST /x"},
+	})
+
+	wantOrder, wantCycles, err := Sort(ops)
+	if err != nil {
+		t.Fatalf("Sort: unexpected error: %v", err)
+	}
+	if len(wantCycles) == 0 {
+		t.Fatal("Sort found no cycle, the test checks nothing")
+	}
+
+	for i := range 200 {
+		order, cycles, err := Sort(ops)
+		if err != nil {
+			t.Fatalf("run %d: Sort: unexpected error: %v", i, err)
+		}
+		if !slices.Equal(order, wantOrder) {
+			t.Fatalf("run %d: Sort order changed:\n got: %q\nwant: %q", i, order, wantOrder)
+		}
+		if !reflect.DeepEqual(cycles, wantCycles) {
+			t.Fatalf("run %d: Sort cycles changed:\n got: %+v\nwant: %+v", i, cycles, wantCycles)
+		}
+	}
 }
 
 // Step 4: Validate (check of an order against the edges).

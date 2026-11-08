@@ -189,9 +189,14 @@ implemented or tested.
   chain** (in Gitea, `POST /user/repos` rather than
   `POST /orgs/{org}/repos`).
 - Self-loops are ignored. Cycles: `plan` detects them, breaks them
-  deterministically and records them in `cycles`. The exact rule for which
-  edge to drop is decided in the heuristic step (e.g. the edge whose
-  producer is not a `POST`, with ties broken by id).
+  deterministically and records them in `cycles`. When Kahn stalls, `Sort`
+  finds the cycles among the waiting operations (strongly connected
+  components of more than one operation; one that only waits for a cycle is
+  not part of it) and drops one edge in each, then goes on. The edge dropped
+  is the smallest by `(producer is a POST, from, to)`: an edge whose producer
+  is not a `POST` goes first, since a `POST` is the usual way to create the
+  value, and the ids break the tie. Overlapping cycles can take more than one
+  drop; each drop is one entry in `cycles`.
 - **Correction:** Kahn's algorithm alone does **not** put `DELETE` last
   (`DELETE /animals/{id}` and `GET /animals/{id}` become ready together).
   The tie-break is the key `(is DELETE, id)` in the priority queue: a

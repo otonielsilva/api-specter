@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"errors"
 	"os"
 	"reflect"
 	"slices"
@@ -427,9 +426,9 @@ func TestBuildZooMatchesGoldenRequires(t *testing.T) {
 }
 
 // POST /animals needs a feedId and POST /feeds needs an animalId, so each
-// producer waits for the other. Until Sort breaks cycles, Build must fail
-// with ErrCycle and return no plan.
-func TestBuildReturnsErrCycle(t *testing.T) {
+// producer waits for the other. Build keeps both, breaks the cycle and
+// records it: both producers are POSTs, so the smaller id goes.
+func TestBuildRecordsCycles(t *testing.T) {
 	body := func(field string) map[string]*contract.Schema {
 		return map[string]*contract.Schema{"application/json": {
 			Type:       contract.SchemaTypeObject,
@@ -441,12 +440,17 @@ func TestBuildReturnsErrCycle(t *testing.T) {
 		{Method: contract.POST, Path: "/feeds", Bodies: body("animalId")},
 	}}
 
-	p, err := Build(c, "api.yaml", nil)
-	if !errors.Is(err, ErrCycle) {
-		t.Fatalf("Build error = %v, want %v", err, ErrCycle)
+	p := mustBuild(t, c, "api.yaml", nil)
+
+	if want := []string{"POST /feeds", "POST /animals"}; !slices.Equal(p.Order, want) {
+		t.Errorf("Order = %q, want %q", p.Order, want)
 	}
-	if p != nil {
-		t.Errorf("Build plan = %+v, want nil on error", p)
+	want := []Cycle{{
+		Ops:     []string{"POST /animals", "POST /feeds"},
+		Dropped: Edge{From: "POST /animals", To: "POST /feeds", Param: "animalId"},
+	}}
+	if !reflect.DeepEqual(p.Cycles, want) {
+		t.Errorf("Cycles = %+v, want %+v", p.Cycles, want)
 	}
 }
 

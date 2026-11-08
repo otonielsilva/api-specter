@@ -46,13 +46,15 @@ func Build(c *contract.Contract, specPath string, specBytes []byte) (*Plan, erro
 	// Tags and Requires.
 	p.fillEmpty()
 
-	// TODO(step 3): Sort will break cycles instead of failing; store them in
-	// p.Cycles then (only when non-nil, so the JSON keeps [] and not null).
-	order, _, err := Sort(p.Operations)
+	order, cycles, err := Sort(p.Operations)
 	if err != nil {
 		return nil, err
 	}
 	p.Order = order
+	// Only when there are cycles, so the JSON keeps [] from fillEmpty.
+	if len(cycles) > 0 {
+		p.Cycles = cycles
+	}
 
 	return p, nil
 }

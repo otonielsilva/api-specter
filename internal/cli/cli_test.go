@@ -136,6 +136,56 @@ paths:
 	})
 }
 
+// "specter plan" on the zoo spec is the M2 acceptance test: two runs give the
+// same bytes, and the plan matches the golden zoo plan in everything Build
+// derives (Spec and Generator are hand-written there) and passes Validate.
+func TestPlanCmdZooMatchesGolden(t *testing.T) {
+	const specPath = "../zoo/openapi.yaml"
+	runPlan := func() []byte {
+		t.Helper()
+		var stdout, stderr bytes.Buffer
+		if err := planCmd(t.Context(), []string{"--spec", specPath}, &stdout, &stderr); err != nil {
+			t.Fatalf("planCmd = %v\n%s", err, stderr.String())
+		}
+		return stdout.Bytes()
+	}
+
+	first := runPlan()
+	if second := runPlan(); !bytes.Equal(first, second) {
+		t.Fatalf("two runs wrote different plans:\n%s\n---\n%s", first, second)
+	}
+
+	got, err := plan.Load(bytes.NewReader(first))
+	if err != nil {
+		t.Fatalf("plan.Load(output) = %v", err)
+	}
+	f, err := os.Open("../plan/testdata/zoo.plan.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	want, err := plan.Load(f)
+	if err != nil {
+		t.Fatalf("plan.Load(golden) = %v", err)
+	}
+
+	if !reflect.DeepEqual(got.Order, want.Order) {
+		t.Errorf("Order:\n got: %q\nwant: %q", got.Order, want.Order)
+	}
+	if !reflect.DeepEqual(got.Operations, want.Operations) {
+		t.Errorf("Operations differ from the golden:\n got: %+v\nwant: %+v", got.Operations, want.Operations)
+	}
+	if !reflect.DeepEqual(got.SeedsNeeded, want.SeedsNeeded) {
+		t.Errorf("SeedsNeeded = %+v, want %+v", got.SeedsNeeded, want.SeedsNeeded)
+	}
+	if !reflect.DeepEqual(got.Cycles, want.Cycles) {
+		t.Errorf("Cycles = %+v, want %+v", got.Cycles, want.Cycles)
+	}
+	if err := plan.Validate(got); err != nil {
+		t.Errorf("plan.Validate(output) = %v", err)
+	}
+}
+
 func TestRunCmd(t *testing.T) {
 	badPlan := filepath.Join(t.TempDir(), "bad.json")
 	if err := os.WriteFile(badPlan, []byte("not json"), 0o600); err != nil {

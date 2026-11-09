@@ -78,8 +78,8 @@ make zoo     # run the bug zoo on 127.0.0.1:8080
 
 ## Usage
 
-Only planning works so far: `run` reads a plan and its spec but does not
-send requests yet.
+Only planning works so far: `run` reads a plan and its spec, checks the
+plan's order, but does not send requests yet.
 
 ```sh
 make build
@@ -87,8 +87,11 @@ make build
 # Build a plan from an OpenAPI document (the bug zoo's, here).
 ./bin/specter plan --spec internal/zoo/openapi.yaml --out zoo.plan.json
 
-# Check the plan against its spec.
-./bin/specter run --plan zoo.plan.json --spec internal/zoo/openapi.yaml
+# Check the plan's order and its spec. Nothing is sent to --base-url yet.
+# --seed (default: random, printed) and --budget (default: no limit) are
+# accepted ahead of the executor.
+./bin/specter run --plan zoo.plan.json --spec internal/zoo/openapi.yaml \
+  --base-url http://127.0.0.1:8080
 
 ./bin/specter version
 ```

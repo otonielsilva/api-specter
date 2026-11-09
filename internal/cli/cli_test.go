@@ -186,6 +186,20 @@ func TestPlanCmdZooMatchesGolden(t *testing.T) {
 	}
 }
 
+// testBaseURL is a valid --base-url for the tests that must get past the flag
+// checks. Nothing is sent to it yet.
+const testBaseURL = "http://127.0.0.1:8080"
+
+func TestRunInvalidOrderOfPlan(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+
+	args := []string{"--plan", "../plan/testdata/zoo_wrongorder.plan.json", "--base-url", testBaseURL}
+	got := runCmd(t.Context(), args, &stdout, &stderr)
+	if !errors.Is(got, plan.ErrInvalid) {
+		t.Errorf("runCmd(wrong order) = %v, want %v", got, plan.ErrInvalid)
+	}
+}
+
 func TestRunCmd(t *testing.T) {
 	badPlan := filepath.Join(t.TempDir(), "bad.json")
 	if err := os.WriteFile(badPlan, []byte("not json"), 0o600); err != nil {
@@ -207,10 +221,21 @@ func TestRunCmd(t *testing.T) {
 		{name: "unknown flag", args: []string{"--unknow"}, wantErr: ErrUsage, wantStderr: "flag provided but not defined: -unknow"},
 		{name: "--plan without value", args: []string{"--plan"}, wantErr: ErrUsage, wantStderr: "flag needs an argument: -plan"},
 		{name: "--spec without value", args: []string{"--plan", zooPlan, "--spec"}, wantErr: ErrUsage, wantStderr: "flag needs an argument: -spec"},
-		{name: "missing plan file", args: []string{"--plan", missing + ".json"}, wantErr: fs.ErrNotExist},
-		{name: "plan is not json", args: []string{"--plan", badPlan}, wantAnyErr: true},
-		{name: "missing spec file", args: []string{"--plan", zooPlan, "--spec", missing + ".yaml"}, wantErr: fs.ErrNotExist},
-		{name: "zoo plan", args: []string{"--plan", zooPlan}, wantStdout: "operations"},
+		{name: "--base-url without value", args: []string{"--plan", zooPlan, "--base-url"}, wantErr: ErrUsage, wantStderr: "flag needs an argument: -base-url"},
+		{name: "--budget without value", args: []string{"--plan", zooPlan, "--base-url", testBaseURL, "--budget"}, wantErr: ErrUsage, wantStderr: "flag needs an argument: -budget"},
+		{name: "--seed without value", args: []string{"--plan", zooPlan, "--base-url", testBaseURL, "--seed"}, wantErr: ErrUsage, wantStderr: "flag needs an argument: -seed"},
+		{name: "missing --base-url", args: []string{"--plan", zooPlan}, wantErr: ErrUsage, wantStderr: "run: --base-url is required"},
+		{name: "--base-url without scheme", args: []string{"--plan", zooPlan, "--base-url", "localhost:8080"}, wantErr: ErrUsage, wantStderr: "run: --base-url:"},
+		{name: "--base-url with ftp scheme", args: []string{"--plan", zooPlan, "--base-url", "ftp://example.com"}, wantErr: ErrUsage, wantStderr: "run: --base-url:"},
+		{name: "--base-url without host", args: []string{"--plan", zooPlan, "--base-url", "http://"}, wantErr: ErrUsage, wantStderr: "run: --base-url:"},
+		{name: "negative --budget", args: []string{"--plan", zooPlan, "--base-url", testBaseURL, "--budget", "-1"}, wantErr: ErrUsage, wantStderr: "run: --budget must not be negative"},
+		{name: "missing plan file", args: []string{"--plan", missing + ".json", "--base-url", testBaseURL}, wantErr: fs.ErrNotExist},
+		{name: "plan is not json", args: []string{"--plan", badPlan, "--base-url", testBaseURL}, wantAnyErr: true},
+		{name: "missing spec file", args: []string{"--plan", zooPlan, "--base-url", testBaseURL, "--spec", missing + ".yaml"}, wantErr: fs.ErrNotExist},
+		{name: "zoo plan", args: []string{"--plan", zooPlan, "--base-url", testBaseURL}, wantStdout: "operations"},
+		{name: "random seed is printed", args: []string{"--plan", zooPlan, "--base-url", testBaseURL}, wantStdout: "seed "},
+		{name: "--seed is printed back", args: []string{"--plan", zooPlan, "--base-url", testBaseURL, "--seed", "42"}, wantStdout: "seed 42"},
+		{name: "--budget is printed back", args: []string{"--plan", zooPlan, "--base-url", testBaseURL, "--budget", "50"}, wantStdout: "budget 50"},
 	}
 
 	for _, tt := range tests {
@@ -255,6 +280,31 @@ func TestSpecLocation(t *testing.T) {
 			got := specLocation(tt.planFile, tt.inPlan, tt.override)
 			if got != tt.want {
 				t.Errorf("specLocation(%q, %q, %q) = %q, want %q", tt.planFile, tt.inPlan, tt.override, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParseBaseURL(t *testing.T) {
+	tests := []struct {
+		name    string
+		raw     string
+		wantErr bool
+	}{
+		{"http with port", "http://127.0.0.1:8080", false},
+		{"https with path", "https://api.example.com/v1", false},
+		{"host without scheme", "localhost:8080", true},
+		{"ip without scheme", "127.0.0.1:8080", true},
+		{"unsupported scheme", "ftp://example.com", true},
+		{"no host", "http://", true},
+		{"empty", "", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := parseBaseURL(tt.raw)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("parseBaseURL(%q) error = %v, wantErr %v", tt.raw, err, tt.wantErr)
 			}
 		})
 	}

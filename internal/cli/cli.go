@@ -35,7 +35,11 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	case "version", "--version":
 		return versionCmd(stdout)
 	default:
-		fmt.Fprintf(stderr, "specter: unknown command %q\n\n", args[0])
+		fmt.Fprintf(stderr, "specter: unknown command %q\n", args[0])
+		if s := suggest(args[0]); s != "" {
+			fmt.Fprintf(stderr, "did you mean %q?\n", s)
+		}
+		fmt.Fprintln(stderr)
 		usage(stderr)
 		return ErrUsage
 	}

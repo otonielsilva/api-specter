@@ -7,12 +7,14 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/otonielsilva/api-specter/internal/contract"
+	"github.com/otonielsilva/api-specter/internal/executor"
 	"github.com/otonielsilva/api-specter/internal/plan"
 )
 
@@ -82,6 +84,31 @@ func runCmd(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 
 	fmt.Fprintf(stdout, "plan %s: %d operations; spec %s: %d paths; target %s; seed %d; budget %d\n",
 		*planFile, len(p.Order), specPath, len(doc.Operations), base, runSeed, *budget)
+
+	client := &http.Client{
+		Timeout: 30 * time.Second,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+
+	config := executor.Config{
+		BaseURL: base,
+		Seed:    runSeed,
+		Budget:  *budget,
+		Client:  client,
+	}
+
+	e := executor.New(config)
+
+	findings, err := e.Run(ctx, p, doc)
+	if err != nil {
+		return fmt.Errorf("run: %w", err)
+	}
+
+	for _, f := range findings {
+		fmt.Fprintf(stdout, "%s: %s: %s\n", f.Oracle, f.Operation, f.Message)
+	}
 
 	return nil
 }

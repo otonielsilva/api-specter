@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -28,6 +29,7 @@ func runCmd(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 	baseURL := fs.String("base-url", "", "base URL of the API under test (absolute http or https URL)")
 	seed := fs.Int64("seed", 0, "seed for random choices (0 picks one from the clock and prints it)")
 	budget := fs.Int("budget", 0, "maximum number of requests (0 means no limit)")
+	verbose := fs.Bool("verbose", false, "log debug messages, such as each request, to stderr")
 
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -60,6 +62,8 @@ func runCmd(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 		fs.Usage()
 		return fmt.Errorf("run: --budget must not be negative: %w", ErrUsage)
 	}
+
+	setupLogger(stderr, *verbose)
 
 	p, err := loadPlan(*planFile)
 	if err != nil {
@@ -111,6 +115,18 @@ func runCmd(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 	}
 
 	return nil
+}
+
+// setupLogger makes the default slog logger write to w, at debug level when
+// verbose is set and at info level otherwise. The log goes to stderr so it
+// never mixes with the report on stdout.
+func setupLogger(w io.Writer, verbose bool) {
+	level := slog.LevelInfo
+	if verbose {
+		level = slog.LevelDebug
+	}
+
+	slog.SetDefault(slog.New(slog.NewTextHandler(w, &slog.HandlerOptions{Level: level})))
 }
 
 // parseBaseURL checks that raw is an absolute http or https URL with a host.

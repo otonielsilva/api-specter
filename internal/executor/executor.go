@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/otonielsilva/api-specter/internal/contract"
@@ -19,6 +21,9 @@ var ErrNotImplemented = errors.New("executor: not implemented")
 // ErrUnknownOperation is returned when the plan lists an operation that the
 // contract does not have, which means the plan is stale.
 var ErrUnknownOperation = errors.New("operation not in the contract")
+
+// ErrNoBaseURL is returned when Config.BaseURL is nil.
+var ErrNoBaseURL = errors.New("executor: no base URL")
 
 // Config holds what a run needs besides the plan and the contract.
 type Config struct {
@@ -70,13 +75,20 @@ func New(cfg Config) *Executor {
 // A failed request is not a failed run: transport errors and non-2xx
 // responses are exchanges for the oracles to judge. Run returns an error
 // only when it cannot continue.
-func (e *Executor) Run(_ context.Context, p *plan.Plan, c *contract.Contract) ([]oracle.Finding, error) {
+func (e *Executor) Run(ctx context.Context, p *plan.Plan, c *contract.Contract) ([]oracle.Finding, error) {
+	// Check the config before using it: a nil BaseURL would panic in do.
+	if e.cfg.BaseURL == nil {
+		return nil, ErrNoBaseURL
+	}
+
 	// Index the contract once so each operation is a map lookup, not a scan
 	// of the slice.
 	byID := make(map[string]contract.Operation, len(c.Operations))
 	for _, op := range c.Operations {
 		byID[op.BuildID()] = op
 	}
+	o := oracle.SimpleOracle{}
+	findings := []oracle.Finding{}
 
 	for _, id := range p.Order {
 		if !p.Operations[id].Enabled {
@@ -84,13 +96,66 @@ func (e *Executor) Run(_ context.Context, p *plan.Plan, c *contract.Contract) ([
 		}
 
 		// A missing operation means the plan is stale against the spec.
-		if _, ok := byID[id]; !ok {
+		op, ok := byID[id]
+		if !ok {
 			return nil, fmt.Errorf("executor: %w: %q", ErrUnknownOperation, id)
+		}
+
+		if op.Method != contract.GET || strings.Contains(op.Path, "{") {
+			slog.Debug("skipping operation", "path", op.Path)
+			continue
+		}
+
+		exchange := e.do(ctx, op)
+		if exchange.Err != nil {
+			slog.Debug("request failed", "method", op.Method, "path", op.Path, "error", exchange.Err)
+			continue
+		}
+
+		findings = append(findings, o.Check(*exchange)...)
+
+	}
+
+	return findings, nil
+}
+
+func (e *Executor) do(ctx context.Context, op contract.Operation) *oracle.Exchange {
+	u := (*url.URL).JoinPath(e.cfg.BaseURL, op.Path)
+	r, err := http.NewRequestWithContext(ctx, string(op.Method), u.String(), nil)
+	if err != nil {
+		return &oracle.Exchange{Err: err}
+	}
+
+	slog.Debug("calling endpoint", "method", op.Method, "url", u.String())
+
+	// Get all required headers
+	for _, param := range op.Params {
+		// Only sending required parameters
+		if !param.Required {
+			continue
+		}
+		if param.In == contract.ParamInHeader {
+			r.Header.Set(param.Name, e.createRamdomValue(param.Schema))
+		}
+		if param.In == contract.ParamInQuery {
+			slog.Debug("skipping query parameter", "name", param.Name)
 		}
 	}
 
-	// Nothing is sent yet. Put this back until the first request is
-	// implemented if Run must not look like a success:
-	// return nil, ErrNotImplemented
-	return nil, nil
+	start := time.Now()
+	resp, err := e.cfg.Client.Do(r)
+	if err != nil {
+		return &oracle.Exchange{Request: r, Err: err}
+	}
+	defer resp.Body.Close()
+
+	slog.Debug("response received",
+		"method", op.Method, "url", u.String(),
+		"status", resp.StatusCode, "duration", time.Since(start))
+
+	return &oracle.Exchange{Request: r, Response: resp}
+}
+
+func (e *Executor) createRamdomValue(_ *contract.Schema) string {
+	return "Dummyvalue"
 }

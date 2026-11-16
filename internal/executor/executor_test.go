@@ -3,6 +3,10 @@ package executor
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"sync/atomic"
 	"testing"
 
 	"github.com/otonielsilva/api-specter/internal/contract"
@@ -17,10 +21,12 @@ func TestRun(t *testing.T) {
 	}
 
 	tests := []struct {
-		name    string
-		plan    *plan.Plan
-		c       *contract.Contract
-		wantErr error
+		name      string
+		plan      *plan.Plan
+		c         *contract.Contract
+		noBaseURL bool
+		wantHits  int32
+		wantErr   error
 	}{
 		{
 			name: "operation in the contract",
@@ -28,7 +34,8 @@ func TestRun(t *testing.T) {
 				Order:      []string{id},
 				Operations: map[string]plan.Operator{id: {Enabled: true}},
 			},
-			c: known,
+			c:        known,
+			wantHits: 1,
 		},
 		{
 			name: "operation missing from the contract",
@@ -47,16 +54,44 @@ func TestRun(t *testing.T) {
 			},
 			c: &contract.Contract{},
 		},
+		{
+			name: "no base URL",
+			plan: &plan.Plan{
+				Order:      []string{id},
+				Operations: map[string]plan.Operator{id: {Enabled: true}},
+			},
+			c:         known,
+			noBaseURL: true,
+			wantErr:   ErrNoBaseURL,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ex := New(Config{})
+			// The handler runs in another goroutine, so the counter is atomic.
+			var hits atomic.Int32
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				hits.Add(1)
+				w.WriteHeader(http.StatusOK)
+			}))
+			t.Cleanup(srv.Close)
 
-			_, err := ex.Run(context.Background(), tt.plan, tt.c)
+			var cfg Config
+			if !tt.noBaseURL {
+				base, err := url.Parse(srv.URL)
+				if err != nil {
+					t.Fatalf("url.Parse(%q) = %v", srv.URL, err)
+				}
+				cfg.BaseURL = base
+			}
+
+			_, err := New(cfg).Run(context.Background(), tt.plan, tt.c)
 
 			if !errors.Is(err, tt.wantErr) {
 				t.Fatalf("Run() error = %v, want %v", err, tt.wantErr)
+			}
+			if got := hits.Load(); got != tt.wantHits {
+				t.Errorf("server got %d requests, want %d", got, tt.wantHits)
 			}
 		})
 	}

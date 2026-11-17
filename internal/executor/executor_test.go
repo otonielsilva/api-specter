@@ -1,16 +1,20 @@
 package executor
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/otonielsilva/api-specter/internal/contract"
+	"github.com/otonielsilva/api-specter/internal/oracle"
 	"github.com/otonielsilva/api-specter/internal/plan"
 )
 
@@ -51,7 +55,7 @@ func TestRunTransportFailureIsAFinding(t *testing.T) {
 
 		p, c := getAnimals()
 
-		got, err := New(Config{BaseURL: base}).Run(context.Background(), p, c)
+		got, err := New(Config{BaseURL: base, Oracles: []oracle.Oracle{oracle.SimpleOracle{}}}).Run(context.Background(), p, c)
 		if err != nil {
 			t.Fatalf("Run() error = %v, want nil", err)
 		}
@@ -75,7 +79,7 @@ func TestRunTransportFailureIsAFinding(t *testing.T) {
 		t.Cleanup(func() { close(release) })
 
 		p, c := getAnimals()
-		ex := New(Config{BaseURL: mustParse(t, srv.URL), RequestTimeout: 50 * time.Millisecond})
+		ex := New(Config{BaseURL: mustParse(t, srv.URL), RequestTimeout: 50 * time.Millisecond, Oracles: []oracle.Oracle{oracle.SimpleOracle{}}})
 
 		start := time.Now()
 		got, err := ex.Run(context.Background(), p, c)
@@ -200,5 +204,39 @@ func TestRun(t *testing.T) {
 				t.Errorf("server got %d requests, want %d", got, tt.wantHits)
 			}
 		})
+	}
+}
+
+// Without oracles Run is not an error: it still sends the requests, finds
+// nothing and logs one warning, so the missing oracles do not go unnoticed.
+func TestRunWithoutOraclesWarns(t *testing.T) {
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		w.WriteHeader(http.StatusInternalServerError) // would be a finding with SimpleOracle
+	}))
+	t.Cleanup(srv.Close)
+
+	// slog.Default is global: capture it for this test and put it back.
+	var logs bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+
+	p, c := getAnimals()
+
+	got, err := New(Config{BaseURL: mustParse(t, srv.URL)}).Run(context.Background(), p, c)
+	if err != nil {
+		t.Fatalf("Run() error = %v, want nil", err)
+	}
+
+	if len(got) != 0 {
+		t.Errorf("Run() returned %d findings, want 0: %+v", len(got), got)
+	}
+	if n := hits.Load(); n != 1 {
+		t.Errorf("server got %d requests, want 1", n)
+	}
+	if out := logs.String(); !strings.Contains(out, "level=WARN") || !strings.Contains(out, "no oracles configured") {
+		t.Errorf("log = %q, want a warning about no oracles", out)
 	}
 }

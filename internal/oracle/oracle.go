@@ -38,9 +38,6 @@ const simpleName = "simple"
 // response, anything else is a finding. It has no state.
 type SimpleOracle struct{}
 
-// Compile-time check that SimpleOracle implements Oracle.
-var _ Oracle = SimpleOracle{}
-
 // Name returns the name that goes in Finding.Oracle.
 func (SimpleOracle) Name() string {
 	return simpleName

@@ -91,13 +91,17 @@ func (e *Executor) Run(ctx context.Context, p *plan.Plan, c *contract.Contract) 
 		return nil, ErrNoBaseURL
 	}
 
+	// Not an error: the requests are still sent, but nothing judges them.
+	if len(e.cfg.Oracles) == 0 {
+		slog.Warn("no oracles configured, responses will not be judged")
+	}
+
 	// Index the contract once so each operation is a map lookup, not a scan
 	// of the slice.
 	byID := make(map[string]contract.Operation, len(c.Operations))
 	for _, op := range c.Operations {
 		byID[op.BuildID()] = op
 	}
-	o := oracle.SimpleOracle{}
 	findings := []oracle.Finding{}
 
 	for _, id := range p.Order {
@@ -129,14 +133,15 @@ func (e *Executor) Run(ctx context.Context, p *plan.Plan, c *contract.Contract) 
 			slog.Debug("request failed", "method", op.Method, "path", op.Path, "error", exchange.Err)
 		}
 
-		findings = append(findings, o.Check(*exchange)...)
-
+		for _, orc := range e.cfg.Oracles {
+			findings = append(findings, orc.Check(exchange)...)
+		}
 	}
 
 	return findings, nil
 }
 
-func (e *Executor) do(ctx context.Context, op contract.Operation) *oracle.Exchange {
+func (e *Executor) do(ctx context.Context, op contract.Operation) oracle.Exchange {
 	// One deadline per request, so a slow endpoint cannot stall the run.
 	ctx, cancel := context.WithTimeout(ctx, e.cfg.RequestTimeout)
 	defer cancel()
@@ -144,7 +149,7 @@ func (e *Executor) do(ctx context.Context, op contract.Operation) *oracle.Exchan
 	u := (*url.URL).JoinPath(e.cfg.BaseURL, op.Path)
 	r, err := http.NewRequestWithContext(ctx, string(op.Method), u.String(), nil)
 	if err != nil {
-		return &oracle.Exchange{Err: err}
+		return oracle.Exchange{Err: err}
 	}
 
 	slog.Debug("calling endpoint", "method", op.Method, "url", u.String())
@@ -166,7 +171,7 @@ func (e *Executor) do(ctx context.Context, op contract.Operation) *oracle.Exchan
 	start := time.Now()
 	resp, err := e.cfg.Client.Do(r)
 	if err != nil {
-		return &oracle.Exchange{Request: r, Err: err}
+		return oracle.Exchange{Request: r, Err: err}
 	}
 	defer resp.Body.Close()
 
@@ -174,7 +179,7 @@ func (e *Executor) do(ctx context.Context, op contract.Operation) *oracle.Exchan
 		"method", op.Method, "url", u.String(),
 		"status", resp.StatusCode, "duration", time.Since(start))
 
-	return &oracle.Exchange{Request: r, Response: resp}
+	return oracle.Exchange{Request: r, Response: resp}
 }
 
 func (e *Executor) createRamdomValue(_ *contract.Schema) string {

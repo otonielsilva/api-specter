@@ -16,6 +16,7 @@ import (
 
 	"github.com/otonielsilva/api-specter/internal/contract"
 	"github.com/otonielsilva/api-specter/internal/executor"
+	"github.com/otonielsilva/api-specter/internal/oracle"
 	"github.com/otonielsilva/api-specter/internal/plan"
 )
 
@@ -101,6 +102,7 @@ func runCmd(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 		Seed:    runSeed,
 		Budget:  *budget,
 		Client:  client,
+		Oracles: []oracle.Oracle{oracle.SimpleOracle{}},
 	}
 
 	e := executor.New(config)

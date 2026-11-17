@@ -22,6 +22,10 @@ var ErrNotImplemented = errors.New("executor: not implemented")
 // contract does not have, which means the plan is stale.
 var ErrUnknownOperation = errors.New("operation not in the contract")
 
+// defaultRequestTimeout is the deadline of a request when
+// Config.RequestTimeout is not set.
+const defaultRequestTimeout = 10 * time.Second
+
 // ErrNoBaseURL is returned when Config.BaseURL is nil.
 var ErrNoBaseURL = errors.New("executor: no base URL")
 
@@ -36,6 +40,9 @@ type Config struct {
 	// Client sends the requests. A nil Client means a default one with a
 	// timeout, never http.DefaultClient.
 	Client *http.Client
+	// RequestTimeout is the deadline of each request. Zero or negative means
+	// defaultRequestTimeout.
+	RequestTimeout time.Duration
 	// Oracles judge every exchange.
 	Oracles []oracle.Oracle
 }
@@ -49,6 +56,9 @@ type Executor struct {
 func New(cfg Config) *Executor {
 	if cfg.Client == nil {
 		cfg.Client = &http.Client{Timeout: 30 * time.Second}
+	}
+	if cfg.RequestTimeout <= 0 {
+		cfg.RequestTimeout = defaultRequestTimeout
 	}
 	return &Executor{cfg: cfg}
 }
@@ -91,6 +101,12 @@ func (e *Executor) Run(ctx context.Context, p *plan.Plan, c *contract.Contract) 
 	findings := []oracle.Finding{}
 
 	for _, id := range p.Order {
+		// Stop when the run is cancelled; otherwise every remaining request
+		// would fail and be reported as a finding.
+		if err := ctx.Err(); err != nil {
+			return findings, fmt.Errorf("executor: %w", err)
+		}
+
 		if !p.Operations[id].Enabled {
 			continue
 		}
@@ -108,8 +124,9 @@ func (e *Executor) Run(ctx context.Context, p *plan.Plan, c *contract.Contract) 
 
 		exchange := e.do(ctx, op)
 		if exchange.Err != nil {
+			// Not fatal: a transport error or a timeout is an exchange, and
+			// the oracles judge it like any other.
 			slog.Debug("request failed", "method", op.Method, "path", op.Path, "error", exchange.Err)
-			continue
 		}
 
 		findings = append(findings, o.Check(*exchange)...)
@@ -120,6 +137,10 @@ func (e *Executor) Run(ctx context.Context, p *plan.Plan, c *contract.Contract) 
 }
 
 func (e *Executor) do(ctx context.Context, op contract.Operation) *oracle.Exchange {
+	// One deadline per request, so a slow endpoint cannot stall the run.
+	ctx, cancel := context.WithTimeout(ctx, e.cfg.RequestTimeout)
+	defer cancel()
+
 	u := (*url.URL).JoinPath(e.cfg.BaseURL, op.Path)
 	r, err := http.NewRequestWithContext(ctx, string(op.Method), u.String(), nil)
 	if err != nil {

@@ -31,6 +31,7 @@ func runCmd(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 	seed := fs.Int64("seed", 0, "seed for random choices (0 picks one from the clock and prints it)")
 	budget := fs.Int("budget", 0, "maximum number of requests (0 means no limit)")
 	verbose := fs.Bool("verbose", false, "log debug messages, such as each request, to stderr")
+	timeout := fs.Duration("timeout", 0, "deadline of each request, such as 5s or 500ms (0 uses the default of 10s)")
 
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -62,6 +63,12 @@ func runCmd(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 		fmt.Fprintln(stderr, "run: --budget must not be negative")
 		fs.Usage()
 		return fmt.Errorf("run: --budget must not be negative: %w", ErrUsage)
+	}
+
+	if *timeout < 0 {
+		fmt.Fprintln(stderr, "run: --timeout must not be negative")
+		fs.Usage()
+		return fmt.Errorf("run: --timeout must not be negative: %w", ErrUsage)
 	}
 
 	setupLogger(stderr, *verbose)
@@ -98,11 +105,12 @@ func runCmd(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 	}
 
 	config := executor.Config{
-		BaseURL: base,
-		Seed:    runSeed,
-		Budget:  *budget,
-		Client:  client,
-		Oracles: []oracle.Oracle{oracle.SimpleOracle{}},
+		BaseURL:        base,
+		Seed:           runSeed,
+		Budget:         *budget,
+		Client:         client,
+		RequestTimeout: *timeout,
+		Oracles:        []oracle.Oracle{oracle.SimpleOracle{}},
 	}
 
 	e := executor.New(config)

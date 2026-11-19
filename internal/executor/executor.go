@@ -121,7 +121,7 @@ func (e *Executor) Run(ctx context.Context, p *plan.Plan, c *contract.Contract) 
 			return nil, fmt.Errorf("executor: %w: %q", ErrUnknownOperation, id)
 		}
 
-		if op.Method != contract.GET || strings.Contains(op.Path, "{") {
+		if strings.Contains(op.Path, "{") {
 			slog.Debug("skipping operation", "path", op.Path)
 			continue
 		}

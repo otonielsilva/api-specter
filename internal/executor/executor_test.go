@@ -8,7 +8,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -238,5 +240,62 @@ func TestRunWithoutOraclesWarns(t *testing.T) {
 	}
 	if out := logs.String(); !strings.Contains(out, "level=WARN") || !strings.Contains(out, "no oracles configured") {
 		t.Errorf("log = %q, want a warning about no oracles", out)
+	}
+}
+
+// Run sends every method, in the order of the plan and not in the order of
+// the contract. Disabled operations and operations with a path parameter
+// that has no value yet are not sent.
+func TestRunSendsInPlanOrder(t *testing.T) {
+	var (
+		mu       sync.Mutex
+		received []string
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		received = append(received, r.Method+" "+r.URL.Path)
+		mu.Unlock()
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(srv.Close)
+
+	// The contract lists GET first. The plan puts POST first, which is how a
+	// producer runs before its consumers, and ends with DELETE.
+	c := &contract.Contract{Operations: []contract.Operation{
+		{Method: contract.GET, Path: "/animals"},
+		{Method: contract.POST, Path: "/animals"},
+		{Method: contract.GET, Path: "/animals/{id}"},
+		{Method: contract.PUT, Path: "/animals"},
+		{Method: contract.DELETE, Path: "/animals"},
+	}}
+	p := &plan.Plan{
+		Order: []string{
+			"POST /animals",
+			"GET /animals",
+			"GET /animals/{id}", // path parameter without a value: skipped
+			"PUT /animals",      // disabled: skipped
+			"DELETE /animals",
+		},
+		Operations: map[string]plan.Operator{
+			"POST /animals":     {Enabled: true},
+			"GET /animals":      {Enabled: true},
+			"GET /animals/{id}": {Enabled: true},
+			"PUT /animals":      {Enabled: false},
+			"DELETE /animals":   {Enabled: true},
+		},
+	}
+
+	_, err := New(Config{BaseURL: mustParse(t, srv.URL)}).Run(context.Background(), p, c)
+	if err != nil {
+		t.Fatalf("Run() error = %v, want nil", err)
+	}
+
+	want := []string{"POST /animals", "GET /animals", "DELETE /animals"}
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if !slices.Equal(received, want) {
+		t.Errorf("server received %v, want %v", received, want)
 	}
 }

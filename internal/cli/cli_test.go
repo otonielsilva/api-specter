@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"io/fs"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -186,8 +188,8 @@ func TestPlanCmdZooMatchesGolden(t *testing.T) {
 	}
 }
 
-// testBaseURL is a valid --base-url for the tests that must get past the flag
-// checks. Nothing is sent to it yet.
+// testBaseURL is a valid --base-url for the tests that fail before any
+// request is sent. The tests that do send requests use an httptest server.
 const testBaseURL = "http://127.0.0.1:8080"
 
 func TestRunInvalidOrderOfPlan(t *testing.T) {
@@ -207,6 +209,14 @@ func TestRunCmd(t *testing.T) {
 	}
 	zooPlan := filepath.Join("..", "plan", "testdata", "zoo.plan.json")
 	missing := filepath.Join(t.TempDir(), "nope")
+
+	// The cases that get past the flag checks reach the executor and send
+	// requests, so they go to a local server and never to a real API.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(srv.Close)
+	target := srv.URL
 
 	tests := []struct {
 		name       string
@@ -232,10 +242,10 @@ func TestRunCmd(t *testing.T) {
 		{name: "missing plan file", args: []string{"--plan", missing + ".json", "--base-url", testBaseURL}, wantErr: fs.ErrNotExist},
 		{name: "plan is not json", args: []string{"--plan", badPlan, "--base-url", testBaseURL}, wantAnyErr: true},
 		{name: "missing spec file", args: []string{"--plan", zooPlan, "--base-url", testBaseURL, "--spec", missing + ".yaml"}, wantErr: fs.ErrNotExist},
-		{name: "zoo plan", args: []string{"--plan", zooPlan, "--base-url", testBaseURL}, wantStdout: "operations"},
-		{name: "random seed is printed", args: []string{"--plan", zooPlan, "--base-url", testBaseURL}, wantStdout: "seed "},
-		{name: "--seed is printed back", args: []string{"--plan", zooPlan, "--base-url", testBaseURL, "--seed", "42"}, wantStdout: "seed 42"},
-		{name: "--budget is printed back", args: []string{"--plan", zooPlan, "--base-url", testBaseURL, "--budget", "50"}, wantStdout: "budget 50"},
+		{name: "zoo plan", args: []string{"--plan", zooPlan, "--base-url", target}, wantStdout: "operations"},
+		{name: "random seed is printed", args: []string{"--plan", zooPlan, "--base-url", target}, wantStdout: "seed "},
+		{name: "--seed is printed back", args: []string{"--plan", zooPlan, "--base-url", target, "--seed", "42"}, wantStdout: "seed 42"},
+		{name: "--budget is printed back", args: []string{"--plan", zooPlan, "--base-url", target, "--budget", "50"}, wantStdout: "budget 50"},
 	}
 
 	for _, tt := range tests {

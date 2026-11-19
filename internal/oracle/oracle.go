@@ -34,7 +34,7 @@ type Oracle interface {
 // simpleName is the name SimpleOracle reports under.
 const simpleName = "simple"
 
-// SimpleOracle judges only GET exchanges: a GET is fine when it gets a 2xx
+// SimpleOracle judges every exchange: it is fine when it gets a 2xx
 // response, anything else is a finding. It has no state.
 type SimpleOracle struct{}
 
@@ -43,11 +43,11 @@ func (SimpleOracle) Name() string {
 	return simpleName
 }
 
-// Check returns a finding when a GET got no response or a non-2xx one. It
-// returns nil for other methods and for exchanges whose request was never
-// built, which is a fault of specter and not of the API.
+// Check returns a finding when a request got no response or a non-2xx one.
+// It returns nil for exchanges whose request was never built, which is a
+// fault of specter and not of the API.
 func (SimpleOracle) Check(ex Exchange) []Finding {
-	if ex.Request == nil || ex.Request.Method != http.MethodGet {
+	if ex.Request == nil {
 		return nil
 	}
 

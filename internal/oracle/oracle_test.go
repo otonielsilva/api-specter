@@ -21,7 +21,7 @@ func TestSimpleOracleCheck(t *testing.T) {
 	}{
 		{name: "GET 200 is fine", method: http.MethodGet, code: http.StatusOK, want: 0},
 		{name: "GET 500 is a finding", method: http.MethodGet, code: http.StatusInternalServerError, want: 1},
-		{name: "POST 500 is ignored, only GET is judged", method: http.MethodPost, code: http.StatusInternalServerError, want: 0},
+		{name: "POST 500 is a finding", method: http.MethodPost, code: http.StatusInternalServerError, want: 1},
 	}
 
 	// Going through the interface also checks that SimpleOracle implements

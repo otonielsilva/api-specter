@@ -21,6 +21,17 @@ func TestMinimal(t *testing.T) {
 		{name: "boolean is false", schema: &contract.Schema{Type: contract.SchemaTypeBoolean}, want: false},
 		{name: "array is empty, not nil", schema: &contract.Schema{Type: contract.SchemaTypeArray}, want: []any{}},
 		{name: "unknown type is an error", schema: &contract.Schema{Type: "foo"}, wantErr: true},
+		{name: "string respects minLength", schema: &contract.Schema{Type: contract.SchemaTypeString, MinLength: ptr(uint64(3))}, want: "aaa"},
+		{name: "integer respects minimum", schema: &contract.Schema{Type: contract.SchemaTypeInteger, Min: ptr(1.0)}, want: int64(1)},
+		{name: "integer rounds a fractional minimum up", schema: &contract.Schema{Type: contract.SchemaTypeInteger, Min: ptr(1.5)}, want: int64(2)},
+		{name: "integer below zero when only max is set", schema: &contract.Schema{Type: contract.SchemaTypeInteger, Max: ptr(-5.0)}, want: int64(-5)},
+		{name: "number respects minimum", schema: &contract.Schema{Type: contract.SchemaTypeNumber, Min: ptr(0.5)}, want: 0.5},
+		{name: "enum picks the first value", schema: &contract.Schema{Type: contract.SchemaTypeString, Enum: []any{"cat", "dog"}}, want: "cat"},
+		{name: "enum wins over minLength", schema: &contract.Schema{Type: contract.SchemaTypeString, MinLength: ptr(uint64(5)), Enum: []any{"cat"}}, want: "cat"},
+		{name: "min above max is an error", schema: &contract.Schema{Type: contract.SchemaTypeInteger, Min: ptr(5.0), Max: ptr(1.0)}, wantErr: true},
+		{name: "no integer between a fractional min and max is an error", schema: &contract.Schema{Type: contract.SchemaTypeInteger, Min: ptr(1.2), Max: ptr(1.8)}, wantErr: true},
+		{name: "huge minLength is an error", schema: &contract.Schema{Type: contract.SchemaTypeString, MinLength: ptr(uint64(1 << 40))}, wantErr: true},
+		{name: "minLength above maxLength is an error", schema: &contract.Schema{Type: contract.SchemaTypeString, MinLength: ptr(uint64(5)), MaxLength: ptr(uint64(2))}, wantErr: true},
 		{
 			name: "object has only the required properties",
 			schema: &contract.Schema{
@@ -86,3 +97,5 @@ func TestMinimal(t *testing.T) {
 		})
 	}
 }
+
+func ptr[T any](v T) *T { return &v }

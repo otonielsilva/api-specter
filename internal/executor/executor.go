@@ -1,9 +1,12 @@
 package executor
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -11,6 +14,7 @@ import (
 	"time"
 
 	"github.com/otonielsilva/api-specter/internal/contract"
+	"github.com/otonielsilva/api-specter/internal/generator"
 	"github.com/otonielsilva/api-specter/internal/oracle"
 	"github.com/otonielsilva/api-specter/internal/plan"
 )
@@ -147,9 +151,30 @@ func (e *Executor) do(ctx context.Context, op contract.Operation) oracle.Exchang
 	defer cancel()
 
 	u := (*url.URL).JoinPath(e.cfg.BaseURL, op.Path)
-	r, err := http.NewRequestWithContext(ctx, string(op.Method), u.String(), nil)
+
+	// The contract says whether the operation takes a body. When the minimal
+	// value cannot be built, nothing is sent: the exchange has no Request, so
+	// the oracles ignore it, because the fault is specter's and not the API's.
+	var body io.Reader
+	schema, hasBody := op.Bodies[jsonMedia]
+	if hasBody {
+		raw, err := minimalJSON(schema)
+		if err != nil {
+			return oracle.Exchange{Err: fmt.Errorf("build body: %w", err)}
+		}
+		body = bytes.NewReader(raw)
+	} else if op.BodyRequired {
+		// The body is required but not in a media type we can build (v0 only
+		// does JSON). Sending nothing would only get a 4xx, so skip it.
+		return oracle.Exchange{Err: fmt.Errorf("build body: %w", ErrUnsupportedMedia)}
+	}
+
+	r, err := http.NewRequestWithContext(ctx, string(op.Method), u.String(), body)
 	if err != nil {
 		return oracle.Exchange{Err: err}
+	}
+	if hasBody {
+		r.Header.Set("Content-Type", jsonMedia)
 	}
 
 	slog.Debug("calling endpoint", "method", op.Method, "url", u.String())
@@ -180,6 +205,22 @@ func (e *Executor) do(ctx context.Context, op contract.Operation) oracle.Exchang
 		"status", resp.StatusCode, "duration", time.Since(start))
 
 	return oracle.Exchange{Request: r, Response: resp}
+}
+
+// jsonMedia is the only request media type the executor knows how to build.
+const jsonMedia = "application/json"
+
+// ErrUnsupportedMedia means an operation requires a request body in a media
+// type other than JSON, which the executor cannot build yet.
+var ErrUnsupportedMedia = errors.New("required request body is not application/json")
+
+// minimalJSON returns the minimal value of schema encoded as JSON.
+func minimalJSON(schema *contract.Schema) ([]byte, error) {
+	value, err := generator.Minimal(schema)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(value)
 }
 
 func (e *Executor) createRamdomValue(_ *contract.Schema) string {

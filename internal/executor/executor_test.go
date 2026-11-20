@@ -3,11 +3,14 @@ package executor
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -299,3 +302,145 @@ func TestRunSendsInPlanOrder(t *testing.T) {
 		t.Errorf("server received %v, want %v", received, want)
 	}
 }
+
+// A POST whose contract has a JSON body schema sends the minimal value of
+// that schema, with the Content-Type header.
+func TestRunSendsMinimalBody(t *testing.T) {
+	var (
+		mu          sync.Mutex
+		gotBody     []byte
+		gotType     string
+		gotContains bool
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+
+		mu.Lock()
+		gotBody, gotType, gotContains = b, r.Header.Get("Content-Type"), true
+		mu.Unlock()
+
+		w.WriteHeader(http.StatusCreated)
+	}))
+	t.Cleanup(srv.Close)
+
+	const id = "POST /animals"
+	c := &contract.Contract{Operations: []contract.Operation{{
+		Method: contract.POST,
+		Path:   "/animals",
+		Bodies: map[string]*contract.Schema{
+			"application/json": {
+				Type:     contract.SchemaTypeObject,
+				Required: []string{"name", "age"},
+				Properties: map[string]*contract.Schema{
+					"name":    {Type: contract.SchemaTypeString, MinLength: ptr(uint64(1))},
+					"age":     {Type: contract.SchemaTypeInteger, Min: ptr(1.0)},
+					"species": {Type: contract.SchemaTypeString}, // optional
+				},
+			},
+		},
+	}}}
+	p := &plan.Plan{
+		Order:      []string{id},
+		Operations: map[string]plan.Operator{id: {Enabled: true}},
+	}
+
+	_, err := New(Config{BaseURL: mustParse(t, srv.URL)}).Run(context.Background(), p, c)
+	if err != nil {
+		t.Fatalf("Run() error = %v, want nil", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if !gotContains {
+		t.Fatal("the server received no request")
+	}
+	if gotType != "application/json" {
+		t.Errorf("Content-Type = %q, want application/json", gotType)
+	}
+
+	var got map[string]any
+	if err := json.Unmarshal(gotBody, &got); err != nil {
+		t.Fatalf("body %q is not JSON: %v", gotBody, err)
+	}
+	want := map[string]any{"name": "a", "age": float64(1)}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("body = %v, want %v", got, want)
+	}
+}
+
+// When Minimal cannot build a body, the operation is skipped: nothing is
+// sent, and it is not a finding, because the fault is specter's.
+func TestRunSkipsWhenBodyCannotBeBuilt(t *testing.T) {
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(srv.Close)
+
+	const id = "POST /animals"
+	c := &contract.Contract{Operations: []contract.Operation{{
+		Method: contract.POST,
+		Path:   "/animals",
+		Bodies: map[string]*contract.Schema{
+			"application/json": {Type: "foo"}, // Minimal returns an error
+		},
+	}}}
+	p := &plan.Plan{
+		Order:      []string{id},
+		Operations: map[string]plan.Operator{id: {Enabled: true}},
+	}
+
+	got, err := New(Config{BaseURL: mustParse(t, srv.URL), Oracles: []oracle.Oracle{oracle.SimpleOracle{}}}).
+		Run(context.Background(), p, c)
+	if err != nil {
+		t.Fatalf("Run() error = %v, want nil", err)
+	}
+	if n := hits.Load(); n != 0 {
+		t.Errorf("server received %d requests, want 0", n)
+	}
+	if len(got) != 0 {
+		t.Errorf("findings = %v, want none", got)
+	}
+}
+
+// An operation that requires a body but only declares a media type other than
+// JSON is skipped: sending it without a body would only make the API answer
+// 4xx, and that is not a finding, because the fault is specter's.
+func TestRunSkipsWhenRequiredBodyIsNotJSON(t *testing.T) {
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		w.WriteHeader(http.StatusBadRequest)
+	}))
+	t.Cleanup(srv.Close)
+
+	const id = "POST /animals"
+	c := &contract.Contract{Operations: []contract.Operation{{
+		Method:       contract.POST,
+		Path:         "/animals",
+		BodyRequired: true,
+		Bodies: map[string]*contract.Schema{
+			"application/x-www-form-urlencoded": {Type: contract.SchemaTypeObject},
+		},
+	}}}
+	p := &plan.Plan{
+		Order:      []string{id},
+		Operations: map[string]plan.Operator{id: {Enabled: true}},
+	}
+
+	got, err := New(Config{BaseURL: mustParse(t, srv.URL), Oracles: []oracle.Oracle{oracle.SimpleOracle{}}}).
+		Run(context.Background(), p, c)
+	if err != nil {
+		t.Fatalf("Run() error = %v, want nil", err)
+	}
+	if n := hits.Load(); n != 0 {
+		t.Errorf("server received %d requests, want 0", n)
+	}
+	if len(got) != 0 {
+		t.Errorf("findings = %v, want none", got)
+	}
+}
+
+func ptr[T any](v T) *T { return &v }

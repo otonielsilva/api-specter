@@ -32,6 +32,7 @@ func runCmd(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 	budget := fs.Int("budget", 0, "maximum number of requests (0 means no limit)")
 	verbose := fs.Bool("verbose", false, "log debug messages, such as each request, to stderr")
 	timeout := fs.Duration("timeout", 0, "deadline of each request, such as 5s or 500ms (0 uses the default of 10s)")
+	includeDestructive := fs.Bool("include-destructive", false, "also send the operations tagged destructive, such as DELETE")
 
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -105,12 +106,13 @@ func runCmd(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 	}
 
 	config := executor.Config{
-		BaseURL:        base,
-		Seed:           runSeed,
-		Budget:         *budget,
-		Client:         client,
-		RequestTimeout: *timeout,
-		Oracles:        []oracle.Oracle{oracle.SimpleOracle{}},
+		BaseURL:            base,
+		Seed:               runSeed,
+		Budget:             *budget,
+		Client:             client,
+		RequestTimeout:     *timeout,
+		Oracles:            []oracle.Oracle{oracle.SimpleOracle{}},
+		IncludeDestructive: *includeDestructive,
 	}
 
 	e := executor.New(config)

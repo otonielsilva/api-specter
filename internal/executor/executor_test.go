@@ -443,4 +443,56 @@ func TestRunSkipsWhenRequiredBodyIsNotJSON(t *testing.T) {
 	}
 }
 
+// An operation tagged destructive is only sent when IncludeDestructive is on.
+func TestRunDestructive(t *testing.T) {
+	tests := []struct {
+		name               string
+		includeDestructive bool
+		want               []string
+	}{
+		{name: "skipped by default", includeDestructive: false, want: []string{"POST /animals"}},
+		{name: "sent with the flag", includeDestructive: true, want: []string{"POST /animals", "DELETE /animals"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var (
+				mu       sync.Mutex
+				received []string
+			)
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				mu.Lock()
+				received = append(received, r.Method+" "+r.URL.Path)
+				mu.Unlock()
+				w.WriteHeader(http.StatusOK)
+			}))
+			t.Cleanup(srv.Close)
+
+			c := &contract.Contract{Operations: []contract.Operation{
+				{Method: contract.POST, Path: "/animals"},
+				{Method: contract.DELETE, Path: "/animals"},
+			}}
+			p := &plan.Plan{
+				Order: []string{"POST /animals", "DELETE /animals"},
+				Operations: map[string]plan.Operator{
+					"POST /animals":   {Enabled: true},
+					"DELETE /animals": {Enabled: true, Tags: []string{plan.TagDestructive}},
+				},
+			}
+
+			cfg := Config{BaseURL: mustParse(t, srv.URL), IncludeDestructive: tt.includeDestructive}
+			if _, err := New(cfg).Run(context.Background(), p, c); err != nil {
+				t.Fatalf("Run() error = %v, want nil", err)
+			}
+
+			mu.Lock()
+			defer mu.Unlock()
+
+			if !slices.Equal(received, tt.want) {
+				t.Errorf("server received %v, want %v", received, tt.want)
+			}
+		})
+	}
+}
+
 func ptr[T any](v T) *T { return &v }

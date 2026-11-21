@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -49,6 +50,9 @@ type Config struct {
 	RequestTimeout time.Duration
 	// Oracles judge every exchange.
 	Oracles []oracle.Oracle
+	// IncludeDestructive sends the operations tagged plan.TagDestructive,
+	// such as every DELETE. Without it they are skipped.
+	IncludeDestructive bool
 }
 
 // Executor runs a plan against a target API.
@@ -115,7 +119,13 @@ func (e *Executor) Run(ctx context.Context, p *plan.Plan, c *contract.Contract) 
 			return findings, fmt.Errorf("executor: %w", err)
 		}
 
-		if !p.Operations[id].Enabled {
+		operator := p.Operations[id]
+		if !operator.Enabled {
+			continue
+		}
+
+		if !e.cfg.IncludeDestructive && slices.Contains(operator.Tags, plan.TagDestructive) {
+			slog.Debug("skipping destructive operation, use --include-destructive", "operation", id)
 			continue
 		}
 

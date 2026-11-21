@@ -8,10 +8,12 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/otonielsilva/api-specter/internal/contract"
@@ -33,6 +35,7 @@ func runCmd(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 	verbose := fs.Bool("verbose", false, "log debug messages, such as each request, to stderr")
 	timeout := fs.Duration("timeout", 0, "deadline of each request, such as 5s or 500ms (0 uses the default of 10s)")
 	includeDestructive := fs.Bool("include-destructive", false, "also send the operations tagged destructive, such as DELETE")
+	allowRemote := fs.Bool("allow-remote", false, "send requests to a target that is not on this machine (by default only loopback targets are allowed)")
 
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -58,6 +61,12 @@ func runCmd(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 		fmt.Fprintf(stderr, "run: --base-url: %v\n", err)
 		fs.Usage()
 		return fmt.Errorf("run: --base-url: %w: %w", ErrUsage, err)
+	}
+
+	if !*allowRemote && !isLoopBack(base) {
+		fmt.Fprintf(stderr, "run: --base-url host %q is not local; pass --allow-remote to send requests to it\n", base.Hostname())
+		fs.Usage()
+		return fmt.Errorf("run: --allow-remote is required for the remote host %q: %w", base.Hostname(), ErrUsage)
 	}
 
 	if *budget < 0 {
@@ -127,6 +136,22 @@ func runCmd(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 	}
 
 	return nil
+}
+
+// isLoopBack reports whether u points to this machine: localhost, any
+// *.localhost name (RFC 6761) or a loopback IP such as 127.0.0.1 or ::1.
+// It judges the literal host and never resolves DNS, because a name can point
+// to a loopback address today and elsewhere tomorrow (DNS rebinding), so any
+// other name is treated as remote.
+func isLoopBack(u *url.URL) bool {
+	host := strings.ToLower(u.Hostname())
+
+	if host == "localhost" || strings.HasSuffix(host, ".localhost") {
+		return true
+	}
+
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // setupLogger makes the default slog logger write to w, at debug level when

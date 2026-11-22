@@ -155,7 +155,7 @@ func (e *Executor) Run(ctx context.Context, p *plan.Plan, c *contract.Contract) 
 	return findings, nil
 }
 
-func (e *Executor) do(ctx context.Context, op contract.Operation) oracle.Exchange {
+func (e *Executor) do(ctx context.Context, op contract.Operation) *oracle.Exchange {
 	// One deadline per request, so a slow endpoint cannot stall the run.
 	ctx, cancel := context.WithTimeout(ctx, e.cfg.RequestTimeout)
 	defer cancel()
@@ -170,18 +170,18 @@ func (e *Executor) do(ctx context.Context, op contract.Operation) oracle.Exchang
 	if hasBody {
 		raw, err := minimalJSON(schema)
 		if err != nil {
-			return oracle.Exchange{Err: fmt.Errorf("build body: %w", err)}
+			return oracle.NewExchange(&op, nil, nil, fmt.Errorf("build body: %w", err))
 		}
 		body = bytes.NewReader(raw)
 	} else if op.BodyRequired {
 		// The body is required but not in a media type we can build (v0 only
 		// does JSON). Sending nothing would only get a 4xx, so skip it.
-		return oracle.Exchange{Err: fmt.Errorf("build body: %w", ErrUnsupportedMedia)}
+		return oracle.NewExchange(&op, nil, nil, fmt.Errorf("build body: %w", ErrUnsupportedMedia))
 	}
 
 	r, err := http.NewRequestWithContext(ctx, string(op.Method), u.String(), body)
 	if err != nil {
-		return oracle.Exchange{Err: err}
+		return oracle.NewExchange(&op, nil, nil, err)
 	}
 	if hasBody {
 		r.Header.Set("Content-Type", jsonMedia)
@@ -206,15 +206,17 @@ func (e *Executor) do(ctx context.Context, op contract.Operation) oracle.Exchang
 	start := time.Now()
 	resp, err := e.cfg.Client.Do(r)
 	if err != nil {
-		return oracle.Exchange{Request: r, Err: err}
+		return oracle.NewExchange(&op, r, nil, err)
 	}
 	defer resp.Body.Close()
+
+	exchange := oracle.NewExchange(&op, r, resp, nil)
 
 	slog.Debug("response received",
 		"method", op.Method, "url", u.String(),
 		"status", resp.StatusCode, "duration", time.Since(start))
 
-	return oracle.Exchange{Request: r, Response: resp}
+	return exchange
 }
 
 // jsonMedia is the only request media type the executor knows how to build.

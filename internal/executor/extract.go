@@ -1,7 +1,9 @@
 package executor
 
 import (
+	"encoding/json"
 	"slices"
+	"strings"
 
 	"github.com/otonielsilva/api-specter/internal/plan"
 )
@@ -38,4 +40,32 @@ func extract(p *plan.Plan) map[string][]string {
 	}
 
 	return extractions
+}
+
+// lookup returns the value that from points to in the JSON body of a response.
+// found is false when there is none, which is different from a field that is
+// null: that one returns nil and true, the same as Pool.Get.
+//
+// v0: only one level is supported, "response.body.<field>", and the body must
+// be a JSON object. Anything else (other prefix, nested path, a body that is
+// empty, invalid or not an object) is not found. Numbers come back as float64,
+// because that is how encoding/json decodes them into an any.
+func lookup(body []byte, from string) (any, bool) {
+	field, ok := strings.CutPrefix(from, "response.body.")
+	if !ok {
+		return nil, false
+	}
+
+	var v any
+	if err := json.Unmarshal(body, &v); err != nil {
+		return nil, false
+	}
+
+	obj, ok := v.(map[string]any)
+	if !ok {
+		return nil, false
+	}
+
+	value, ok := obj[field]
+	return value, ok
 }

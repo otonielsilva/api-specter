@@ -3,6 +3,7 @@ package executor
 import (
 	"maps"
 	"os"
+	"reflect"
 	"slices"
 	"testing"
 
@@ -177,4 +178,68 @@ func TestExtractIndexesProducerOutsidePlan(t *testing.T) {
 		"POST /login":   {"response.body.token"},
 	}
 	sameExtractions(t, got, want)
+}
+
+func TestLookup(t *testing.T) {
+	tests := []struct {
+		name      string
+		body      string
+		from      string
+		wantFound bool
+		wantValue any
+	}{
+		// encoding/json decodes every JSON number into float64.
+		{name: "Value fount at root", from: "response.body.id", body: "{\"id\": 1}", wantValue: float64(1), wantFound: true},
+		{name: "Value found at null", from: "response.body.id", body: "{\"id\": null}", wantFound: true},
+		{name: "Value not found", from: "response.body.idx", body: "{\"id\": 1}"},
+		{name: "Body nil", from: "response.body.idx"},
+		{name: "From nil", body: "{\"id\": 1}"},
+
+		// Values of each type.
+		{name: "String", from: "response.body.id", body: `{"id": "abc"}`, wantValue: "abc", wantFound: true},
+		{name: "Bool", from: "response.body.id", body: `{"id": true}`, wantValue: true, wantFound: true},
+		{name: "Object", from: "response.body.id", body: `{"id": {"x": 1}}`, wantValue: map[string]any{"x": float64(1)}, wantFound: true},
+		{name: "Array", from: "response.body.id", body: `{"id": [1, 2]}`, wantValue: []any{float64(1), float64(2)}, wantFound: true},
+		{name: "Zero is not absent", from: "response.body.id", body: `{"id": 0}`, wantValue: float64(0), wantFound: true},
+		{name: "Empty string is not absent", from: "response.body.id", body: `{"id": ""}`, wantValue: "", wantFound: true},
+		{name: "False is not absent", from: "response.body.id", body: `{"id": false}`, wantValue: false, wantFound: true},
+
+		// Absent field.
+		{name: "Empty object", from: "response.body.id", body: `{}`},
+		{name: "Other field only", from: "response.body.id", body: `{"name": "rex"}`},
+		{name: "Field name is case sensitive", from: "response.body.id", body: `{"ID": 1}`},
+
+		// Body that is not an object.
+		{name: "Empty body", from: "response.body.id", body: ``},
+		{name: "Not JSON", from: "response.body.id", body: `not json`},
+		{name: "HTML", from: "response.body.id", body: `<html><body>502 Bad Gateway</body></html>`},
+		{name: "Truncated JSON", from: "response.body.id", body: `{"id": 1`},
+		{name: "Array at root", from: "response.body.id", body: `[{"id": 1}]`},
+		{name: "Number at root", from: "response.body.id", body: `42`},
+		{name: "String at root", from: "response.body.id", body: `"id"`},
+		{name: "Null at root", from: "response.body.id", body: `null`},
+
+		// Invalid or unsupported from.
+		{name: "Header is not supported", from: "response.header.Location", body: `{"Location": "/animals/1"}`},
+		{name: "Missing response prefix", from: "body.id", body: `{"id": 1}`},
+		{name: "Prefix only", from: "response.body", body: `{"id": 1}`},
+		{name: "Nested path is not supported yet", from: "response.body.data.id", body: `{"data": {"id": 1}}`},
+
+		// Shape of the JSON.
+		{name: "Duplicate key keeps the last", from: "response.body.id", body: `{"id": 1, "id": 2}`, wantValue: float64(2), wantFound: true},
+		{name: "Indented JSON", from: "response.body.id", body: "{\n  \"id\": 7\n}\n", wantValue: float64(7), wantFound: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			b := []byte(tt.body)
+			got, found := lookup(b, tt.from)
+			if tt.wantFound != found {
+				t.Errorf("lookup() found = %v, want %v", found, tt.wantFound)
+			}
+			if !reflect.DeepEqual(got, tt.wantValue) {
+				t.Errorf("lookup() = %v, want %v", got, tt.wantValue)
+			}
+		})
+	}
 }

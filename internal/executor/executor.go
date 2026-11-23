@@ -112,6 +112,9 @@ func (e *Executor) Run(ctx context.Context, p *plan.Plan, c *contract.Contract) 
 	}
 	findings := []oracle.Finding{}
 
+	producers := extract(p)
+	pool := NewPool()
+
 	for _, id := range p.Order {
 		// Stop when the run is cancelled; otherwise every remaining request
 		// would fail and be reported as a finding.
@@ -145,6 +148,18 @@ func (e *Executor) Run(ctx context.Context, p *plan.Plan, c *contract.Contract) 
 			// Not fatal: a transport error or a timeout is an exchange, and
 			// the oracles judge it like any other.
 			slog.Debug("request failed", "method", op.Method, "path", op.Path, "error", exchange.Err)
+		}
+		// Only a successful response has values worth capturing: the id in a
+		// 4xx body does not exist. Response is nil on a transport error.
+		if exchange.Response != nil && exchange.Response.StatusCode/100 == 2 {
+			// An operation nobody depends on has no entry: producers[id] is a
+			// nil slice and the loop does not run.
+			for _, from := range producers[id] {
+				valueResponse, foundResponse := lookup(exchange.Body, from)
+				if foundResponse {
+					pool.Put(Key{Op: op.BuildID(), From: from}, valueResponse)
+				}
+			}
 		}
 
 		for _, orc := range e.cfg.Oracles {

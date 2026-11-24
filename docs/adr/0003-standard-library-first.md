@@ -41,6 +41,12 @@ parser and a SQLite driver.
 - **gin/echo/chi for the zoo** — `net/http` routing covers it.
 - **testify** — the standard `testing` package with table-driven tests is
   idiomatic and enough.
+- **A JSON path library (gjson, jsonpointer) for `executor.lookup`** — the
+  lookup is a few lines that walk objects by dotted keys, so it stays by hand.
+  It is the last JSON path parser in specter: if a second need appears (array
+  indexes, filters, keys with dots), adopt a library that replaces `lookup`
+  too, and record it in "Dependencies accepted". The `From` syntax is a
+  contract between `plan` and `run`, so the migration must cover it.
 
 ## Consequences
 

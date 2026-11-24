@@ -223,7 +223,19 @@ func TestLookup(t *testing.T) {
 		{name: "Header is not supported", from: "response.header.Location", body: `{"Location": "/animals/1"}`},
 		{name: "Missing response prefix", from: "body.id", body: `{"id": 1}`},
 		{name: "Prefix only", from: "response.body", body: `{"id": 1}`},
-		{name: "Nested path is not supported yet", from: "response.body.data.id", body: `{"data": {"id": 1}}`},
+
+		// Nested path.
+		{name: "Nested path", from: "response.body.data.id", body: `{"data": {"id": 1}}`, wantValue: float64(1), wantFound: true},
+		{name: "Nested path, three levels", from: "response.body.a.b.c", body: `{"a": {"b": {"c": "x"}}}`, wantValue: "x", wantFound: true},
+		{name: "Nested path ending in an object", from: "response.body.data", body: `{"data": {"id": 1}}`, wantValue: map[string]any{"id": float64(1)}, wantFound: true},
+		{name: "Nested null value", from: "response.body.data.id", body: `{"data": {"id": null}}`, wantFound: true},
+		{name: "Nested key missing", from: "response.body.data.id", body: `{"data": {"name": "rex"}}`},
+		{name: "Middle step is not an object", from: "response.body.data.id", body: `{"data": 5}`},
+		{name: "Middle step is an array", from: "response.body.data.id", body: `{"data": [{"id": 1}]}`},
+		{name: "Middle step is null", from: "response.body.data.id", body: `{"data": null}`},
+		{name: "Flat key with a dot is not reachable", from: "response.body.a.b", body: `{"a.b": 1}`},
+		{name: "Empty key at the end", from: "response.body.data.", body: `{"data": {"": 1}}`},
+		{name: "Empty key in the middle", from: "response.body.data..id", body: `{"data": {"id": 1}}`},
 
 		// Shape of the JSON.
 		{name: "Duplicate key keeps the last", from: "response.body.id", body: `{"id": 1, "id": 2}`, wantValue: float64(2), wantFound: true},

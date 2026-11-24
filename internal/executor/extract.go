@@ -46,26 +46,41 @@ func extract(p *plan.Plan) map[string][]string {
 // found is false when there is none, which is different from a field that is
 // null: that one returns nil and true, the same as Pool.Get.
 //
-// v0: only one level is supported, "response.body.<field>", and the body must
-// be a JSON object. Anything else (other prefix, nested path, a body that is
-// empty, invalid or not an object) is not found. Numbers come back as float64,
-// because that is how encoding/json decodes them into an any.
+// from is "response.body." followed by one or more keys separated by dots, so
+// "response.body.data.id" walks into the object under "data". Every step must
+// be a JSON object that has the key. Anything else (other prefix, an empty
+// key, a body that is empty or invalid, a step that is not an object) is not
+// found. Numbers come back as float64, because that is how encoding/json
+// decodes them into an any.
+//
+// Limits: a key that contains a dot cannot be reached, and arrays cannot be
+// indexed.
 func lookup(body []byte, from string) (any, bool) {
-	field, ok := strings.CutPrefix(from, "response.body.")
+	path, ok := strings.CutPrefix(from, "response.body.")
 	if !ok {
 		return nil, false
 	}
 
-	var v any
-	if err := json.Unmarshal(body, &v); err != nil {
+	var current any
+	if err := json.Unmarshal(body, &current); err != nil {
 		return nil, false
 	}
 
-	obj, ok := v.(map[string]any)
-	if !ok {
-		return nil, false
+	for _, key := range strings.Split(path, ".") {
+		if key == "" {
+			return nil, false
+		}
+
+		obj, ok := current.(map[string]any)
+		if !ok {
+			return nil, false
+		}
+
+		current, ok = obj[key]
+		if !ok {
+			return nil, false
+		}
 	}
 
-	value, ok := obj[field]
-	return value, ok
+	return current, true
 }

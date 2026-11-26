@@ -57,6 +57,28 @@ func TestConvertSchema(t *testing.T) {
 			},
 		},
 		{
+			name: "minProperties",
+			build: func() *openapi3.Schema {
+				return openapi3.NewObjectSchema().
+					WithProperty("name", openapi3.NewStringSchema()).
+					WithMinProperties(1)
+			},
+			check: func(t *testing.T, got *Schema) {
+				if got.MinProperties == nil || *got.MinProperties != 1 {
+					t.Errorf("MinProperties = %v, want 1", got.MinProperties)
+				}
+			},
+		},
+		{
+			name:  "minProperties zero is unset",
+			build: openapi3.NewObjectSchema,
+			check: func(t *testing.T, got *Schema) {
+				if got.MinProperties != nil {
+					t.Errorf("MinProperties = %d, want nil", *got.MinProperties)
+				}
+			},
+		},
+		{
 			name: "integer bounds",
 			build: func() *openapi3.Schema {
 				return openapi3.NewIntegerSchema().WithMin(0).WithMax(30)

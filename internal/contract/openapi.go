@@ -180,6 +180,11 @@ func convertSchema(s *openapi3.Schema, memo map[*openapi3.Schema]*Schema) *Schem
 		v := *s.MaxLength
 		out.MaxLength = &v
 	}
+	// MinProps is a plain uint64 in kin, so 0 and "unset" are the same.
+	if s.MinProps > 0 {
+		v := s.MinProps
+		out.MinProperties = &v
+	}
 
 	if len(s.Properties) > 0 {
 		out.Properties = make(map[string]*Schema, len(s.Properties))

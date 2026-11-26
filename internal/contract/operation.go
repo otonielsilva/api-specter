@@ -103,6 +103,10 @@ type Schema struct {
 	// Max is the inclusive upper bound of a number or integer. Nil means
 	// unbounded.
 	Max *float64
+	// MinProperties is the minimum number of properties an object must have,
+	// counting the required ones. Nil means no minimum. Only used when Type is
+	// SchemaTypeObject.
+	MinProperties *uint64
 	// MinLength is the minimum length of a string. Nil means unbounded.
 	MinLength *uint64
 	// MaxLength is the maximum length of a string. Nil means unbounded.

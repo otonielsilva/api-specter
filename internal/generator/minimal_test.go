@@ -76,6 +76,140 @@ func TestMinimal(t *testing.T) {
 			},
 			wantErr: true,
 		},
+
+		// minProperties: the required properties come first, and optional ones
+		// are added, in name order, until the object has enough.
+		{
+			name: "minProperties adds an optional property",
+			schema: &contract.Schema{
+				Type:          contract.SchemaTypeObject,
+				MinProperties: ptr(uint64(1)),
+				Properties: map[string]*contract.Schema{
+					"name": {Type: contract.SchemaTypeString},
+					"age":  {Type: contract.SchemaTypeInteger},
+				},
+			},
+			// "age" comes before "name": the choice must not depend on map order.
+			want: map[string]any{"age": int64(0)},
+		},
+		{
+			name: "required properties count toward minProperties",
+			schema: &contract.Schema{
+				Type:          contract.SchemaTypeObject,
+				Required:      []string{"name"},
+				MinProperties: ptr(uint64(1)),
+				Properties: map[string]*contract.Schema{
+					"name": {Type: contract.SchemaTypeString},
+					"age":  {Type: contract.SchemaTypeInteger},
+				},
+			},
+			want: map[string]any{"name": ""},
+		},
+		{
+			name: "required first, then optional ones up to the minimum",
+			schema: &contract.Schema{
+				Type:          contract.SchemaTypeObject,
+				Required:      []string{"species"},
+				MinProperties: ptr(uint64(2)),
+				Properties: map[string]*contract.Schema{
+					"name":    {Type: contract.SchemaTypeString},
+					"species": {Type: contract.SchemaTypeString},
+					"age":     {Type: contract.SchemaTypeInteger},
+				},
+			},
+			want: map[string]any{"species": "", "age": int64(0)},
+		},
+		{
+			name: "minProperties zero adds nothing",
+			schema: &contract.Schema{
+				Type:          contract.SchemaTypeObject,
+				MinProperties: ptr(uint64(0)),
+				Properties:    map[string]*contract.Schema{"name": {Type: contract.SchemaTypeString}},
+			},
+			want: map[string]any{},
+		},
+		{
+			name: "added property respects its own limits",
+			schema: &contract.Schema{
+				Type:          contract.SchemaTypeObject,
+				MinProperties: ptr(uint64(1)),
+				Properties:    map[string]*contract.Schema{"age": {Type: contract.SchemaTypeInteger, Min: ptr(1.0)}},
+			},
+			want: map[string]any{"age": int64(1)},
+		},
+		{
+			name: "a property that cannot be built is skipped for the next one",
+			schema: &contract.Schema{
+				Type:          contract.SchemaTypeObject,
+				MinProperties: ptr(uint64(1)),
+				Properties: map[string]*contract.Schema{
+					"a": {Type: "foo"},
+					"b": {Type: contract.SchemaTypeString},
+				},
+			},
+			want: map[string]any{"b": ""},
+		},
+		{
+			name: "minProperties in a nested required object",
+			schema: &contract.Schema{
+				Type:     contract.SchemaTypeObject,
+				Required: []string{"body"},
+				Properties: map[string]*contract.Schema{
+					"body": {
+						Type:          contract.SchemaTypeObject,
+						MinProperties: ptr(uint64(1)),
+						Properties:    map[string]*contract.Schema{"x": {Type: contract.SchemaTypeInteger}},
+					},
+				},
+			},
+			want: map[string]any{"body": map[string]any{"x": int64(0)}},
+		},
+		{
+			name: "the PATCH of an animal in the zoo",
+			schema: &contract.Schema{
+				Type:          contract.SchemaTypeObject,
+				MinProperties: ptr(uint64(1)),
+				Properties: map[string]*contract.Schema{
+					"name":    {Type: contract.SchemaTypeString, MinLength: ptr(uint64(1))},
+					"species": {Type: contract.SchemaTypeString, MinLength: ptr(uint64(1))},
+					"age":     {Type: contract.SchemaTypeInteger, Min: ptr(1.0)},
+				},
+			},
+			want: map[string]any{"age": int64(1)},
+		},
+		{
+			name: "fewer properties than minProperties is an error",
+			schema: &contract.Schema{
+				Type:          contract.SchemaTypeObject,
+				MinProperties: ptr(uint64(3)),
+				Properties: map[string]*contract.Schema{
+					"a": {Type: contract.SchemaTypeString},
+					"b": {Type: contract.SchemaTypeString},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "not enough properties that can be built is an error",
+			schema: &contract.Schema{
+				Type:          contract.SchemaTypeObject,
+				MinProperties: ptr(uint64(2)),
+				Properties: map[string]*contract.Schema{
+					"a": {Type: "foo"},
+					"b": {Type: contract.SchemaTypeString},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "huge minProperties is an error",
+			schema: &contract.Schema{
+				Type:          contract.SchemaTypeObject,
+				MinProperties: ptr(uint64(1 << 40)),
+				Properties:    map[string]*contract.Schema{"a": {Type: contract.SchemaTypeString}},
+			},
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -95,6 +229,33 @@ func TestMinimal(t *testing.T) {
 				t.Errorf("Minimal() = %#v (%T), want %#v (%T)", got, got, tt.want, tt.want)
 			}
 		})
+	}
+}
+
+// Map iteration order is random in Go. The object that Minimal builds must not
+// depend on it, or two runs with the same seed would send different bodies.
+func TestMinimalObjectIsDeterministic(t *testing.T) {
+	schema := &contract.Schema{
+		Type:          contract.SchemaTypeObject,
+		MinProperties: ptr(uint64(2)),
+		Properties: map[string]*contract.Schema{
+			"e": {Type: contract.SchemaTypeString},
+			"d": {Type: contract.SchemaTypeString},
+			"c": {Type: contract.SchemaTypeString},
+			"b": {Type: contract.SchemaTypeString},
+			"a": {Type: contract.SchemaTypeString},
+		},
+	}
+	want := map[string]any{"a": "", "b": ""}
+
+	for range 200 {
+		got, err := Minimal(schema)
+		if err != nil {
+			t.Fatalf("Minimal() error = %v, want nil", err)
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("Minimal() = %#v, want %#v", got, want)
+		}
 	}
 }
 

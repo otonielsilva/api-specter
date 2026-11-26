@@ -3,14 +3,17 @@ package generator
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"math"
+	"slices"
 	"strings"
 
 	"github.com/otonielsilva/api-specter/internal/contract"
 )
 
 // Minimal returns the smallest value that s accepts, ready for json.Marshal.
-// An object only gets its required properties. It returns an error for a
+// An object gets its required properties and, when minProperties asks for
+// more, optional ones in name order. It returns an error for a
 // schema it cannot satisfy, so the caller never sends a made-up body.
 func Minimal(s *contract.Schema) (any, error) {
 	if s == nil {
@@ -36,6 +39,11 @@ func Minimal(s *contract.Schema) (any, error) {
 			}
 			obj[name] = value
 		}
+		if s.MinProperties != nil {
+			if err := addOptional(obj, s); err != nil {
+				return nil, err
+			}
+		}
 		return obj, nil
 	case contract.SchemaTypeArray:
 		return []any{}, nil
@@ -50,6 +58,39 @@ func Minimal(s *contract.Schema) (any, error) {
 	default:
 		return nil, fmt.Errorf("generator: unsupported schema type %q", s.Type)
 	}
+}
+
+// addOptional adds optional properties of s to obj, which already has the
+// required ones, until obj has s.MinProperties properties. They are taken in
+// name order, never in the order of the map, so the same schema always gives
+// the same body. A property whose minimal value cannot be built is skipped and
+// the next one is tried. It returns an error when s does not have enough
+// properties that can be built; properties that additionalProperties would
+// allow are not invented.
+func addOptional(obj map[string]any, s *contract.Schema) error {
+	want := *s.MinProperties
+	if want > uint64(len(s.Properties)) {
+		return fmt.Errorf("generator: minProperties %d is above the %d properties of the schema", want, len(s.Properties))
+	}
+
+	for _, name := range slices.Sorted(maps.Keys(s.Properties)) {
+		if uint64(len(obj)) >= want {
+			return nil
+		}
+		if _, ok := obj[name]; ok {
+			continue
+		}
+		value, err := Minimal(s.Properties[name])
+		if err != nil {
+			continue
+		}
+		obj[name] = value
+	}
+
+	if uint64(len(obj)) < want {
+		return fmt.Errorf("generator: only %d properties can be built, minProperties is %d", len(obj), want)
+	}
+	return nil
 }
 
 // minimalInteger returns the integer closest to zero that is not below the

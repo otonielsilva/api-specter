@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
-	"strings"
 	"time"
 
 	"github.com/otonielsilva/api-specter/internal/contract"
@@ -138,12 +137,18 @@ func (e *Executor) Run(ctx context.Context, p *plan.Plan, c *contract.Contract) 
 			return nil, fmt.Errorf("executor: %w: %q", ErrUnknownOperation, id)
 		}
 
-		if strings.Contains(op.Path, "{") {
-			slog.Debug("skipping operation", "path", op.Path)
+		values, err := pathValues(op, operator, pool)
+		if err != nil {
+			slog.Warn("Path parameters are invalid", "operation", id, "error", err)
+			continue
+		}
+		path, err := resolvePath(op.Path, values)
+		if err != nil {
+			slog.Warn("Path parameters are invalid", "operation", id, "error", err)
 			continue
 		}
 
-		exchange := e.do(ctx, op)
+		exchange := e.do(ctx, op, path)
 		if exchange.Err != nil {
 			// Not fatal: a transport error or a timeout is an exchange, and
 			// the oracles judge it like any other.
@@ -170,12 +175,12 @@ func (e *Executor) Run(ctx context.Context, p *plan.Plan, c *contract.Contract) 
 	return findings, nil
 }
 
-func (e *Executor) do(ctx context.Context, op contract.Operation) *oracle.Exchange {
+func (e *Executor) do(ctx context.Context, op contract.Operation, path string) *oracle.Exchange {
 	// One deadline per request, so a slow endpoint cannot stall the run.
 	ctx, cancel := context.WithTimeout(ctx, e.cfg.RequestTimeout)
 	defer cancel()
 
-	u := (*url.URL).JoinPath(e.cfg.BaseURL, op.Path)
+	u := (*url.URL).JoinPath(e.cfg.BaseURL, path)
 
 	// The contract says whether the operation takes a body. When the minimal
 	// value cannot be built, nothing is sent: the exchange has no Request, so

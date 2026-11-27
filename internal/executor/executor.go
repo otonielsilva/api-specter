@@ -137,14 +137,17 @@ func (e *Executor) Run(ctx context.Context, p *plan.Plan, c *contract.Contract) 
 			return nil, fmt.Errorf("executor: %w: %q", ErrUnknownOperation, id)
 		}
 
+		// An operation whose path parameters have no usable value is skipped:
+		// the producer has not run, or failed, or its value does not fit. That
+		// is the normal case of a run, so it is a debug line and not a warning.
 		values, err := pathValues(op, operator, pool)
 		if err != nil {
-			slog.Warn("Path parameters are invalid", "operation", id, "error", err)
+			slog.Debug("skipping operation", "operation", id, "error", err)
 			continue
 		}
 		path, err := resolvePath(op.Path, values)
 		if err != nil {
-			slog.Warn("Path parameters are invalid", "operation", id, "error", err)
+			slog.Debug("skipping operation", "operation", id, "error", err)
 			continue
 		}
 

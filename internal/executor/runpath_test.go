@@ -73,10 +73,11 @@ func TestRunFillsPathParameter(t *testing.T) {
 		{name: "field with another name than the parameter", status: 201, body: `{"animalId": 5}`, from: "response.body.animalId", schema: integer, want: []string{"POST /animals", "GET /animals/5"}},
 		{name: "string id", status: 201, body: `{"id": "abc"}`, from: "response.body.id", schema: str, want: []string{"POST /animals", "GET /animals/abc"}},
 		{name: "number given to a string parameter", status: 201, body: `{"id": 12}`, from: "response.body.id", schema: str, want: []string{"POST /animals", "GET /animals/12"}},
-		// The value is one segment of the path, escaped on the wire.
-		{name: "space is escaped", status: 201, body: `{"id": "a b"}`, from: "response.body.id", schema: str, want: []string{"POST /animals", "GET /animals/a%20b"}},
+		// The value is one segment of the path. Only the slash proves the
+		// escape: url.URL.String escapes a space or a "?" by itself, so cases
+		// for those would pass even without url.PathEscape (TestResolvePath
+		// covers them).
 		{name: "slash does not add a segment", status: 201, body: `{"id": "a/b"}`, from: "response.body.id", schema: str, want: []string{"POST /animals", "GET /animals/a%2Fb"}},
-		{name: "question mark does not start a query", status: 201, body: `{"id": "a?b=c"}`, from: "response.body.id", schema: str, want: []string{"POST /animals", "GET /animals/a%3Fb=c"}},
 
 		// A failed producer feeds nothing, even when the body has the field.
 		{name: "400 with an id in the body", status: 400, body: `{"id": 1}`, from: "response.body.id", schema: integer, want: []string{"POST /animals"}},

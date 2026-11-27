@@ -56,12 +56,37 @@ func NewExchange(operation *contract.Operation, req *http.Request, resp *http.Re
 	return ex
 }
 
+// Category says what kind of thing an oracle found in an exchange, so a report
+// can group findings and a run can decide its exit code from them. It is a
+// string, like plan.Match, so it prints and compares without a table.
+type Category string
+
+// The categories of ContractOracle. CategoryExpected is not a finding: it names
+// the exchange that the contract foresaw, and Check returns nothing for it.
+const (
+	// CategoryExpected is a response the contract documents, whatever its
+	// status: a 200, and also a 404 or a 400 that the operation lists.
+	CategoryExpected Category = "expected"
+	// CategoryUndocumented is a status that the contract does not list for the
+	// operation, and is not a 5xx.
+	CategoryUndocumented Category = "undocumented"
+	// CategoryServerError is any 5xx, documented or not.
+	CategoryServerError Category = "server_error"
+	// CategoryNoResponse is a request that was sent and got no response:
+	// timeout, connection refused, and so on. It may be the network and not
+	// the API.
+	CategoryNoResponse Category = "no_response"
+)
+
 // Finding is something an oracle judged to be wrong with an exchange.
 type Finding struct {
 	// Oracle is the name of the oracle that reported it.
 	Oracle    string
 	Operation string
 	Message   string
+	// Category is what kind of finding it is. It is empty for an oracle that
+	// does not categorise, such as SimpleOracle.
+	Category Category
 }
 
 // Oracle judges one exchange. It never sends requests.

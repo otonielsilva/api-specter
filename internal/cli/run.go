@@ -115,12 +115,15 @@ func runCmd(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 	}
 
 	config := executor.Config{
-		BaseURL:            base,
-		Seed:               runSeed,
-		Budget:             *budget,
-		Client:             client,
-		RequestTimeout:     *timeout,
-		Oracles:            []oracle.Oracle{oracle.SimpleOracle{}},
+		BaseURL:        base,
+		Seed:           runSeed,
+		Budget:         *budget,
+		Client:         client,
+		RequestTimeout: *timeout,
+		// Both judge every exchange: SimpleOracle is the baseline that ignores
+		// the contract, ContractOracle is the one that reads it. A finding says
+		// which oracle reported it.
+		Oracles:            []oracle.Oracle{oracle.SimpleOracle{}, oracle.ContractOracle{}},
 		IncludeDestructive: *includeDestructive,
 	}
 
